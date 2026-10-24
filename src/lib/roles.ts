@@ -11,6 +11,8 @@ export const ROLE_LABELS: Record<Role, string> = {
 };
 
 export type Section =
+  | 'desk'
+  | 'control'
   | 'dashboard'
   | 'leads'
   | 'students'
@@ -25,6 +27,8 @@ export type Section =
   | 'settings';
 
 const ACCESS: Record<Section, Role[]> = {
+  desk: ['admin', 'rahbar'],
+  control: ['rahbar'],
   dashboard: ['rahbar', 'admin', 'bugalter', 'oqituvchi', 'support', 'sotuv', 'marketing'],
   leads: ['rahbar', 'admin', 'sotuv', 'marketing'],
   students: ['rahbar', 'admin', 'oqituvchi', 'support', 'sotuv', 'bugalter'],

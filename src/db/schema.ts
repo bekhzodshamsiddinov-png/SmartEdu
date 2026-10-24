@@ -146,6 +146,7 @@ export const lessons = pgTable(
     date: date('date').notNull(),
     topic: text('topic'),
     teacherStatus: text('teacher_status').notNull().default('vaqtida'),
+    arrivalChecked: boolean('arrival_checked').notNull().default(false),
     note: text('note'),
     markedById: integer('marked_by_id').references(() => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

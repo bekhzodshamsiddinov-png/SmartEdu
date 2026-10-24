@@ -20,7 +20,7 @@ export async function login(_: AuthState, fd: FormData): Promise<AuthState> {
   if (!u.active) return { error: "Hisobingiz o'chirilgan. Rahbarga murojaat qiling." };
   const token = await signSession({ uid: u.id, role: u.role });
   (await cookies()).set(SESSION_COOKIE, token, sessionCookieOptions);
-  redirect('/');
+  redirect(u.role === 'admin' ? '/ish-stoli' : '/');
 }
 
 export async function logout() {

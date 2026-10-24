@@ -34,10 +34,10 @@ export async function saveAttendance(input: {
     const teacherStatus = u.role === 'oqituvchi' || u.role === 'support' ? undefined : input.teacherStatus;
     await db
       .insert(lessons)
-      .values({ groupId: input.groupId, date: input.date, topic: input.topic || null, teacherStatus: teacherStatus || 'vaqtida', markedById: u.id })
+      .values({ groupId: input.groupId, date: input.date, topic: input.topic || null, teacherStatus: teacherStatus || 'vaqtida', arrivalChecked: !!teacherStatus, markedById: u.id })
       .onConflictDoUpdate({
         target: [lessons.groupId, lessons.date],
-        set: { topic: input.topic || null, ...(teacherStatus ? { teacherStatus } : {}), markedById: u.id },
+        set: { topic: input.topic || null, ...(teacherStatus ? { teacherStatus, arrivalChecked: true } : {}), markedById: u.id },
       });
     // Ketma-ket 2 marta kelmaganlarni "xavf ostida" deb belgilash
     await db.execute(sql`
@@ -83,3 +83,16 @@ export async function logParentReport(groupId: number, text: string) {
   });
 }
 
+
+export async function setArrival(groupId: number, date: string, status: 'vaqtida' | 'kechikdi' | 'otilmadi') {
+  return run(async () => {
+    const u = await assertSection('attendance');
+    if (u.role !== 'admin' && u.role !== 'rahbar') throw new Error("O'qituvchi kelishini administrator belgilaydi.");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("Sana noto'g'ri.");
+    await db
+      .insert(lessons)
+      .values({ groupId, date, teacherStatus: status, arrivalChecked: true, markedById: u.id })
+      .onConflictDoUpdate({ target: [lessons.groupId, lessons.date], set: { teacherStatus: status, arrivalChecked: true } });
+    return { message: status === 'vaqtida' ? "O'qituvchi vaqtida keldi" : status === 'kechikdi' ? 'Kechikish qayd etildi' : "Dars o'tilmadi deb qayd etildi" };
+  });
+}

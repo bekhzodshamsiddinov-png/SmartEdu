@@ -3,7 +3,9 @@ import type { Section } from '@/lib/roles';
 export type NavItem = { href: string; label: string; section: Section; icon: string };
 
 export const NAV: NavItem[] = [
+  { href: '/ish-stoli', label: 'Ish stoli', section: 'desk', icon: 'desk' },
   { href: '/', label: 'Bosh sahifa', section: 'dashboard', icon: 'home' },
+  { href: '/nazorat', label: 'Nazorat', section: 'control', icon: 'control' },
   { href: '/lidlar', label: 'Lidlar', section: 'leads', icon: 'magnet' },
   { href: '/oquvchilar', label: "O'quvchilar", section: 'students', icon: 'users' },
   { href: '/guruhlar', label: 'Guruhlar', section: 'groups', icon: 'layers' },

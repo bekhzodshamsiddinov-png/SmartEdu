@@ -1,0 +1,1 @@
+ALTER TABLE "lessons" ADD COLUMN "arrival_checked" boolean DEFAULT false NOT NULL;

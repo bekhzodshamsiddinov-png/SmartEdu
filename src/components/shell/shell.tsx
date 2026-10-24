@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   Home, Magnet, Users, Layers, CalendarCheck, Wallet, Landmark, BriefcaseBusiness, ListChecks,
-  GraduationCap, BarChart3, Settings, Menu, X, LogOut, Plus, ChevronDown,
+  GraduationCap, BarChart3, Settings, ClipboardCheck, Gauge, Menu, X, LogOut, Plus, ChevronDown,
 } from 'lucide-react';
 import { Logo } from '@/components/logo';
 import { Avatar, cn } from '@/components/ui';
@@ -14,7 +14,7 @@ import type { NavItem } from './nav';
 
 const ICONS: Record<string, typeof Home> = {
   home: Home, magnet: Magnet, users: Users, layers: Layers, check: CalendarCheck, wallet: Wallet,
-  bank: Landmark, brief: BriefcaseBusiness, tasks: ListChecks, grad: GraduationCap, chart: BarChart3, cog: Settings,
+  bank: Landmark, desk: ClipboardCheck, control: Gauge, brief: BriefcaseBusiness, tasks: ListChecks, grad: GraduationCap, chart: BarChart3, cog: Settings,
 };
 
 type QuickAdd = { href: string; label: string }[];
@@ -36,7 +36,7 @@ export function Shell({
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [path]);
   const active = (href: string) => (href === '/' ? path === '/' : path.startsWith(href));
-  const bottom = items.filter((i) => ['/', '/davomat', '/oquvchilar', '/tolovlar', '/lidlar'].includes(i.href)).slice(0, 4);
+  const bottom = items.filter((i) => ['/ish-stoli', '/', '/davomat', '/oquvchilar', '/tolovlar', '/lidlar'].includes(i.href)).slice(0, 4);
 
   const nav = (
     <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-2" aria-label="Asosiy menyu">
