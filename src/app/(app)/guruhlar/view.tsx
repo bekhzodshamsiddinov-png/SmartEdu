@@ -18,7 +18,7 @@ import { STUDENT_STATUS } from '@/lib/constants';
 type G = {
   id: number; name: string; courseId: number; course: string; color: string; teacherId: number | null; teacher: string | null;
   supportId: number | null; support: string | null; days: string; startTime: string; endTime: string; room: string | null;
-  capacity: number; startDate: string | null; active: boolean; students: number;
+  capacity: number; startDate: string | null; active: boolean; students: number; branchId: number | null;
 };
 type C = { id: number; name: string; price: number; duration: number; color: string; description: string | null; active: boolean; groups: number; students: number };
 type Detail = {
@@ -30,7 +30,7 @@ type Detail = {
 const COLORS = ['#008A70', '#3D6FD1', '#C2862A', '#B5487A', '#7A5BC7'];
 const DAY_FULL: Record<string, string> = { Du: 'Dushanba', Se: 'Seshanba', Chor: 'Chorshanba', Pa: 'Payshanba', Ju: 'Juma', Sha: 'Shanba', Ya: 'Yakshanba' };
 
-export function GroupsView({ groups, courses, teachers, groupOpts, detail, role, tab }: { groups: G[]; courses: C[]; teachers: { id: number; name: string; role: string }[]; groupOpts: GroupOpt[]; detail: Detail | null; role: Role; tab: 'guruhlar' | 'yonalishlar' }) {
+export function GroupsView({ groups, courses, teachers, groupOpts, detail, role, tab, branches, currentBranch }: { groups: G[]; courses: C[]; teachers: { id: number; name: string; role: string }[]; groupOpts: GroupOpt[]; detail: Detail | null; role: Role; tab: 'guruhlar' | 'yonalishlar'; branches: { id: number; name: string }[]; currentBranch: number | null }) {
   const router = useRouter();
   const path = usePathname();
   const [edit, setEdit] = useState<G | 'new' | null>(null);
@@ -93,7 +93,10 @@ export function GroupsView({ groups, courses, teachers, groupOpts, detail, role,
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="truncate text-[17px] font-extrabold">{g.name}</div>
-                      <div className="truncate text-[13px] text-fg-muted">{g.course}</div>
+                      <div className="truncate text-[13px] text-fg-muted">
+                        {g.course}
+                        {branches.length > 1 && !currentBranch && <>, {branches.find((b) => b.id === g.branchId)?.name}</>}
+                      </div>
                     </div>
                     {!g.active && <Badge>Yopilgan</Badge>}
                   </div>
@@ -174,7 +177,7 @@ export function GroupsView({ groups, courses, teachers, groupOpts, detail, role,
       )}
 
       <Modal open={!!edit} onClose={() => setEdit(null)} title={edit === 'new' ? 'Yangi guruh' : 'Guruhni tahrirlash'}>
-        {edit && <GroupForm g={edit === 'new' ? null : edit} courses={courses.filter((c) => c.active)} teachers={teachers} onDone={() => setEdit(null)} />}
+        {edit && <GroupForm g={edit === 'new' ? null : edit} courses={courses.filter((c) => c.active)} teachers={teachers} branches={branches} currentBranch={currentBranch} onDone={() => setEdit(null)} />}
       </Modal>
       <Modal open={!!course} onClose={() => setCourse(null)} title={course === 'new' ? "Yangi yo'nalish" : "Yo'nalishni tahrirlash"} size="sm">
         {course && <CourseForm c={course === 'new' ? null : course} onDone={() => setCourse(null)} />}
@@ -319,7 +322,7 @@ function GroupDrawer({ g, d, manage, role, groupOpts, onEdit, onClose }: { g: G;
   );
 }
 
-function GroupForm({ g, courses, teachers, onDone }: { g: G | null; courses: C[]; teachers: { id: number; name: string; role: string }[]; onDone: () => void }) {
+function GroupForm({ g, courses, teachers, branches, currentBranch, onDone }: { g: G | null; courses: C[]; teachers: { id: number; name: string; role: string }[]; branches: { id: number; name: string }[]; currentBranch: number | null; onDone: () => void }) {
   const days = new Set((g?.days ?? 'Du,Chor,Ju').split(','));
   return (
     <ActionForm action={saveGroup.bind(null, g?.id ?? null)} onDone={onDone} onCancel={onDone} submitLabel={g ? 'Saqlash' : 'Guruh ochish'}>
@@ -384,9 +387,22 @@ function GroupForm({ g, courses, teachers, onDone }: { g: G | null; courses: C[]
           <input type="number" name="capacity" min={1} defaultValue={g?.capacity ?? 14} className="field" />
         </Field>
       </div>
-      <Field label="Boshlangan sana">
-        <input type="date" name="startDate" defaultValue={g?.startDate ?? ''} className="field" />
-      </Field>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Boshlangan sana">
+          <input type="date" name="startDate" defaultValue={g?.startDate ?? ''} className="field" />
+        </Field>
+        {branches.length > 1 && (
+          <Field label="Filial">
+            <select name="branchId" defaultValue={g?.branchId ?? currentBranch ?? branches[0]?.id} className="field">
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+      </div>
     </ActionForm>
   );
 }

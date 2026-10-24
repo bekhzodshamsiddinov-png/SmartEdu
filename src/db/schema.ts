@@ -48,12 +48,22 @@ export const settings = pgTable('settings', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
 
+export const branches = pgTable('branches', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  address: text('address'),
+  phone: text('phone'),
+  active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
   fullName: text('full_name').notNull(),
   phone: text('phone').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   role: roleEnum('role').notNull(),
+  branchId: integer('branch_id').references(() => branches.id, { onDelete: 'set null' }),
   position: text('position'),
   baseSalary: integer('base_salary').notNull().default(0),
   bonusRule: text('bonus_rule'),
@@ -79,6 +89,7 @@ export const groups = pgTable('groups', {
   courseId: integer('course_id')
     .notNull()
     .references(() => courses.id),
+  branchId: integer('branch_id').references(() => branches.id, { onDelete: 'set null' }),
   teacherId: integer('teacher_id').references(() => users.id),
   supportId: integer('support_id').references(() => users.id),
   days: text('days').notNull().default('Du,Chor,Ju'),
@@ -104,6 +115,7 @@ export const students = pgTable(
     address: text('address'),
     source: text('source'),
     status: studentStatusEnum('status').notNull().default('faol'),
+    branchId: integer('branch_id').references(() => branches.id, { onDelete: 'set null' }),
     joinedAt: date('joined_at').notNull(),
     leftAt: date('left_at'),
     leftReason: text('left_reason'),
@@ -202,6 +214,7 @@ export const transactions = pgTable(
   {
     id: serial('id').primaryKey(),
     type: txTypeEnum('type').notNull(),
+    branchId: integer('branch_id').references(() => branches.id, { onDelete: 'set null' }),
     category: text('category').notNull(),
     amount: integer('amount').notNull(),
     date: date('date').notNull(),
@@ -231,6 +244,7 @@ export const leads = pgTable(
     fullName: text('full_name').notNull(),
     phone: text('phone').notNull(),
     source: text('source').notNull().default('Instagram'),
+    branchId: integer('branch_id').references(() => branches.id, { onDelete: 'set null' }),
     courseId: integer('course_id').references(() => courses.id),
     stage: leadStageEnum('stage').notNull().default('yangi'),
     maxStage: integer('max_stage').notNull().default(0),
@@ -348,6 +362,7 @@ export const staffReports = pgTable(
 );
 
 export type User = typeof users.$inferSelect;
+export type Branch = typeof branches.$inferSelect;
 export type Role = (typeof roleEnum.enumValues)[number];
 export type Course = typeof courses.$inferSelect;
 export type Group = typeof groups.$inferSelect;

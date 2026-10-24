@@ -4,6 +4,7 @@ import { groups, courses, users, enrollments, students, attendance, lessons } fr
 import { requireSection } from '@/lib/auth';
 import { addDays, groupHasLessonOn, today } from '@/lib/dates';
 import { AttendanceView } from './view';
+import { getBranchScope } from '@/lib/branch';
 
 export const metadata = { title: 'Davomat' };
 
@@ -12,6 +13,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
   const user = await requireSection('attendance');
   const mine = user.role === 'oqituvchi' || user.role === 'support';
   const t = today();
+  const scope = await getBranchScope();
   const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.sana ?? '') ? sp.sana : t;
 
   let gs = await db
@@ -19,7 +21,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
     .from(groups)
     .innerJoin(courses, eq(courses.id, groups.courseId))
     .leftJoin(users, eq(users.id, groups.teacherId))
-    .where(eq(groups.active, true))
+    .where(and(eq(groups.active, true), scope.id ? eq(groups.branchId, scope.id) : undefined))
     .orderBy(asc(groups.startTime));
   if (mine) gs = gs.filter((g) => g.teacherId === user.id || g.supportId === user.id);
 
@@ -48,7 +50,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
     .from(attendance)
     .innerJoin(students, eq(students.id, attendance.studentId))
     .innerJoin(groups, eq(groups.id, attendance.groupId))
-    .where(sql`${attendance.status} = 'kelmadi' and ${attendance.date} >= ${since}`)
+    .where(sql`${attendance.status} = 'kelmadi' and ${attendance.date} >= ${since} ${scope.id ? sql`and ${groups.branchId} = ${scope.id}` : sql``}`)
     .orderBy(asc(attendance.called), desc(attendance.date));
 
   const absentList = mine ? absents.filter((a) => a.teacherId === user.id || a.supportId === user.id) : absents;

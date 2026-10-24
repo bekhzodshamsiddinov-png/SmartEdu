@@ -22,6 +22,8 @@ type Monthly = {
   bySource: { source: string; total: number; paid: number }[];
   byGroup: { name: string; teacher: string | null; total: number; present: number; lessons: number; late: number; missed: number }[];
   results: { type: string; c: number }[];
+  branches: { id: number; name: string; active: number; joined: number; left: number; tuition: number; other: number; expense: number; groups: number }[];
+  branchName: string | null;
 };
 type Rep = { id: number; date: string; kind: string; done: string; problems: string | null; plan: string | null; user: string; role: Role; userId: number };
 
@@ -33,7 +35,7 @@ export function ReportsView({ month, tab, showMonthly, monthly, reports, isBoss 
     <>
       <PageHeader
         title="Hisobotlar"
-        sub={tab === 'oylik' ? `${fmtMonth(month)} bo'yicha umumiy hisobot` : 'Kunlik va haftalik hisobotlar'}
+        sub={tab === 'oylik' ? `${fmtMonth(month)} bo'yicha ${m?.branchName ? `${m.branchName} hisoboti` : 'umumiy hisobot'}` : 'Kunlik va haftalik hisobotlar'}
         actions={
           tab === 'oylik' && (
             <Button variant="secondary" onClick={() => window.print()}>
@@ -115,6 +117,19 @@ export function ReportsView({ month, tab, showMonthly, monthly, reports, isBoss 
               {m.results.length ? <Tbl head={['Turi', 'Soni']} rows={m.results.map((r) => [r.type, r.c])} /> : <p className="px-5 pb-5 text-sm text-fg-muted">Bu oyda natija yozilmagan.</p>}
             </Card>
           </div>
+          {m.branches.length > 0 && (
+            <Card>
+              <CardHeader title="Filiallar taqqoslamasi" sub={fmtMonth(month)} />
+              <Tbl
+                head={['Filial', 'Guruhlar', 'Faol', "Qo'shildi", 'Ketdi', 'Kirim', 'Xarajat', 'Foyda']}
+                rows={m.branches.map((b) => {
+                  const inc = b.tuition + b.other;
+                  return [b.name, b.groups, b.active, b.joined, b.left, money(inc), money(b.expense), <span key="p" className={inc - b.expense < 0 ? 'font-bold text-bad' : 'font-bold text-good'}>{money(inc - b.expense)}</span>];
+                })}
+              />
+              <p className="px-5 py-3 text-xs text-fg-muted">Onlayn kurslar tushumi filiallarga taqsimlanmaydi va bu jadvalga kirmaydi.</p>
+            </Card>
+          )}
           <Card>
             <CardHeader title="Guruhlar va o'qituvchilar" sub="Davomat va o'tilgan darslar" />
             <Tbl

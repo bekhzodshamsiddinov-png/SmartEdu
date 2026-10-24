@@ -6,6 +6,7 @@ import { assertSection } from '@/lib/auth';
 import { run, str, req, int } from '@/lib/action';
 import { normalizePhone } from '@/lib/format';
 import { today } from '@/lib/dates';
+import { branchForNew } from '@/lib/branch';
 
 async function feeFor(groupId: number) {
   const [g] = await db
@@ -23,6 +24,9 @@ export async function createStudent(fd: FormData) {
     const p = str(fd, 'phone');
     const pp = str(fd, 'parentPhone');
     const joinedAt = str(fd, 'joinedAt') || today();
+    const gid = int(fd, 'groupId');
+    const [grp] = gid ? await db.select({ b: groups.branchId }).from(groups).where(eq(groups.id, gid)) : [];
+    const branchId = grp?.b ?? (await branchForNew());
     const [s] = await db
       .insert(students)
       .values({
@@ -36,6 +40,7 @@ export async function createStudent(fd: FormData) {
         source: str(fd, 'source'),
         note: str(fd, 'note'),
         joinedAt,
+        branchId,
         leadId: int(fd, 'leadId'),
       })
       .returning({ id: students.id });
@@ -134,6 +139,8 @@ export async function enroll(studentId: number, fd: FormData) {
     if (!groupId) throw new Error('Guruhni tanlang.');
     const fee = int(fd, 'monthlyFee') ?? (await feeFor(groupId));
     await db.insert(enrollments).values({ studentId, groupId, monthlyFee: fee, startDate: str(fd, 'startDate') || today() });
+    const [g] = await db.select({ b: groups.branchId }).from(groups).where(eq(groups.id, groupId));
+    if (g?.b) await db.update(students).set({ branchId: g.b }).where(eq(students.id, studentId));
     await db.update(students).set({ status: 'faol' }).where(and(eq(students.id, studentId), eq(students.status, 'muzlatilgan')));
     return { message: "Guruhga qo'shildi" };
   });

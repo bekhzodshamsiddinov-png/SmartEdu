@@ -4,12 +4,12 @@ import { db } from '@/db';
 import { groups, courses, users } from '@/db/schema';
 import type { GroupOpt } from '@/components/forms';
 
-export async function groupOptions(): Promise<GroupOpt[]> {
+export async function groupOptions(branch: number | null = null): Promise<GroupOpt[]> {
   const r = await db
     .select({ id: groups.id, name: groups.name, course: courses.name, fee: courses.monthlyPrice })
     .from(groups)
     .innerJoin(courses, eq(courses.id, groups.courseId))
-    .where(eq(groups.active, true))
+    .where(branch ? sql`${groups.active} and ${groups.branchId} = ${branch}` : eq(groups.active, true))
     .orderBy(asc(groups.name));
   return r;
 }

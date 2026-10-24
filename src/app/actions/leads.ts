@@ -6,6 +6,7 @@ import { assertSection } from '@/lib/auth';
 import { run, str, req, int } from '@/lib/action';
 import { normalizePhone } from '@/lib/format';
 import { STAGE_INDEX } from '@/lib/constants';
+import { branchForNew } from '@/lib/branch';
 
 export async function saveLead(id: number | null, fd: FormData) {
   return run(async () => {
@@ -21,7 +22,7 @@ export async function saveLead(id: number | null, fd: FormData) {
       updatedAt: new Date(),
     };
     if (id) await db.update(leads).set(v).where(eq(leads.id, id));
-    else await db.insert(leads).values(v);
+    else await db.insert(leads).values({ ...v, branchId: await branchForNew() });
     return { message: id ? 'Lid yangilandi' : "Lid qo'shildi" };
   });
 }

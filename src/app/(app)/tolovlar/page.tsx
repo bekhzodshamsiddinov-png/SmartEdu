@@ -6,12 +6,15 @@ import { getBalances } from '@/lib/finance';
 import { getSettings } from '@/lib/settings';
 import { monthEnd, monthStart, thisMonth } from '@/lib/dates';
 import { PaymentsView } from './view';
+import { getBranchScope } from '@/lib/branch';
 
 export const metadata = { title: "To'lovlar" };
 
 export default async function PaymentsPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const sp = await searchParams;
   const user = await requireSection('payments');
+  const scope = await getBranchScope();
+  const B = scope.id;
   const month = /^\d{4}-\d{2}$/.test(sp.oy ?? '') ? sp.oy : thisMonth();
   const [list, all, balances, s, lastPay, enr] = await Promise.all([
     db
@@ -19,9 +22,9 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
       .from(payments)
       .innerJoin(students, eq(students.id, payments.studentId))
       .leftJoin(users, eq(users.id, payments.receivedById))
-      .where(sql`${payments.paidAt} between ${monthStart(month)} and ${monthEnd(month)}`)
+      .where(sql`${payments.paidAt} between ${monthStart(month)} and ${monthEnd(month)} ${B ? sql`and ${students.branchId} = ${B}` : sql``}`)
       .orderBy(desc(payments.paidAt), desc(payments.id)),
-    db.select({ id: students.id, name: students.fullName, phone: students.phone, parentPhone: students.parentPhone, parentName: students.parentName, status: students.status }).from(students).where(sql`${students.status} in ('faol','xavf','muzlatilgan')`).orderBy(students.fullName),
+    db.select({ id: students.id, name: students.fullName, phone: students.phone, parentPhone: students.parentPhone, parentName: students.parentName, status: students.status }).from(students).where(sql`${students.status} in ('faol','xavf','muzlatilgan') ${B ? sql`and ${students.branchId} = ${B}` : sql``}`).orderBy(students.fullName),
     getBalances(),
     getSettings(),
     db.execute<{ student_id: number; d: string }>(sql`select student_id, max(paid_at)::text d from payments group by 1`),

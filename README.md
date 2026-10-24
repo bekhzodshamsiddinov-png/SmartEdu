@@ -6,6 +6,8 @@ United IT Clubs o'quv markazi uchun boshqaruv tizimi (CRM + ERP). Barcha ma'lumo
 
 | Bo'lim | Nima qiladi |
 | --- | --- |
+| Ish stoli | Administratorning kunlik checklisti: o'qituvchi kelishi, davomat, qo'ng'iroqlar, to'lov eslatmalari, ota-onaga hisobot, ofisga kelganlar, kunlik hisobot |
+| Nazorat | Rahbar uchun: har bir xodimning bugungi va 7 kunlik bajarilish foizi, bajarilmagan ishlar |
 | Bosh sahifa | Bugungi darslar, asosiy raqamlar (kun / hafta / oy / yil), qarzdorlar, kelmaganlar, sotuv voronkasi |
 | Lidlar | Kanban voronka: Yangi → Bog'lanildi → Sinov darsi → To'lov / Rad etdi, manba bo'yicha konversiya |
 | O'quvchilar | Ro'yxat, filtrlar, profil: to'lovlar, davomat, baholar, qo'ng'iroqlar, natijalar, ketish sababi va qaytarish urinishi |
@@ -15,6 +17,8 @@ United IT Clubs o'quv markazi uchun boshqaruv tizimi (CRM + ERP). Barcha ma'lumo
 | Moliya | Kirim-chiqim jurnali (hujjat raqami bilan), SmartEdu / bank / soliq oylik solishtirmasi, tahlil |
 | Xodimlar | Rollar va ruxsatlar, har bir xodimning oylik ko'rsatkichlari |
 | Vazifalar | Vazifa berish va nazorat |
+| Onlayn kurslar | Kurslar, modul va darslar konstruktori, sotuvlar, onlayn o'quvchilar, promokodlar |
+| Filiallar | Yuqoridagi tanlagich orqali filial bo'yicha ko'rish, xodimni filialga bog'lash, filiallar taqqoslamasi |
 | Bitiruvchilar | Ish joyi, daromad, oxirgi aloqa, tavsiyalar |
 | Hisobotlar | Oylik hisobot (chop etish / PDF) va xodimlarning kunlik hisobotlari |
 | Sozlamalar | Markaz ma'lumotlari, to'lov va oylik sanalari, to'liq zaxira (JSON) va CSV eksport |

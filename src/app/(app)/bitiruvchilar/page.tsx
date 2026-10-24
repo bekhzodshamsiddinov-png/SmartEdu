@@ -2,11 +2,14 @@ import { sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { requireSection } from '@/lib/auth';
 import { GraduatesView } from './view';
+import { getBranchScope } from '@/lib/branch';
+import { andBranch } from '@/lib/branch';
 
 export const metadata = { title: 'Bitiruvchilar' };
 
 export default async function GraduatesPage() {
   await requireSection('graduates');
+  const scope = await getBranchScope();
   const rows = await db.execute<{
     id: number; name: string; phone: string | null; graduated_at: string | null; course: string | null; color: string | null;
     workplace: string | null; position: string | null; monthly_income: number | null; freelance: boolean | null; studying_at: string | null;
@@ -18,7 +21,7 @@ export default async function GraduatesPage() {
       gr.workplace, gr.position, gr.monthly_income, gr.freelance, gr.studying_at, gr.last_contact_at::text, gr.referrals, gr.in_telegram_group, gr.note,
       (select count(*) from results r where r.student_id = s.id)::int results
     from students s left join graduates gr on gr.student_id = s.id
-    where s.status = 'bitirgan'
+    where s.status = 'bitirgan' ${andBranch('s.branch_id', scope.id)}
     order by s.graduated_at desc nulls last`);
   return <GraduatesView rows={[...rows]} />;
 }

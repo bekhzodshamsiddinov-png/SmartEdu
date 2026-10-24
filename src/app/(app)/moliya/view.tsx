@@ -29,7 +29,7 @@ const METHODS = [
   { k: 'karta', l: 'Karta' },
 ];
 
-type Tx = { id: number; type: 'kirim' | 'chiqim'; category: string; amount: number; date: string; method: string; counterparty: string | null; document: string | null; note: string | null; by: string | null };
+type Tx = { id: number; branchId: number | null; type: 'kirim' | 'chiqim'; category: string; amount: number; date: string; method: string; counterparty: string | null; document: string | null; note: string | null; by: string | null };
 
 export function FinanceView({
   month,
@@ -45,7 +45,11 @@ export function FinanceView({
   tab,
   openNew,
   isBoss,
+  branches,
+  currentBranch,
 }: {
+  branches: { id: number; name: string }[];
+  currentBranch: number | null;
   month: string;
   tx: Tx[];
   ie: { tuition: number; online: number; otherIncome: number; income: number; expense: number; profit: number };
@@ -219,7 +223,7 @@ export function FinanceView({
         </Card>
       )}
 
-      {tab === 'solishtirma' && <Reconciliation month={month} system={system} rec={rec} />}
+      {tab === 'solishtirma' && <Reconciliation month={month} system={system} rec={rec} multi={branches.length > 1} />}
 
       {tab === 'tahlil' && (
         <div className="grid gap-5 lg:grid-cols-2">
@@ -241,13 +245,13 @@ export function FinanceView({
       )}
 
       <Modal open={!!edit} onClose={close} title={edit === 'kirim' ? 'Boshqa kirim' : edit === 'chiqim' ? 'Xarajat kiritish' : 'Yozuvni tahrirlash'} sub={edit === 'kirim' ? "O'quvchi to'lovlari To'lovlar bo'limida kiritiladi" : undefined}>
-        {edit && <TxForm t={typeof edit === 'object' ? edit : null} type={typeof edit === 'object' ? edit.type : edit} onDone={close} />}
+        {edit && <TxForm t={typeof edit === 'object' ? edit : null} type={typeof edit === 'object' ? edit.type : edit} branches={branches} currentBranch={currentBranch} onDone={close} />}
       </Modal>
     </>
   );
 }
 
-function TxForm({ t, type, onDone }: { t: Tx | null; type: 'kirim' | 'chiqim'; onDone: () => void }) {
+function TxForm({ t, type, branches, currentBranch, onDone }: { t: (Tx & { branchId?: number | null }) | null; type: 'kirim' | 'chiqim'; branches: { id: number; name: string }[]; currentBranch: number | null; onDone: () => void }) {
   const cats = type === 'kirim' ? INCOME : EXPENSE;
   return (
     <ActionForm action={saveTransaction.bind(null, t?.id ?? null)} onDone={onDone} onCancel={onDone}>
@@ -285,14 +289,27 @@ function TxForm({ t, type, onDone }: { t: Tx | null; type: 'kirim' | 'chiqim'; o
       <Field label="Hujjat" hint="Shartnoma, hisob-faktura yoki chek raqami. Soliq solishtirmasi uchun muhim.">
         <input name="document" defaultValue={t?.document ?? ''} className="field" placeholder="Masalan: Shartnoma No 12, hisob-faktura 0045" />
       </Field>
-      <Field label="Izoh">
-        <input name="note" defaultValue={t?.note ?? ''} className="field" />
-      </Field>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Izoh">
+          <input name="note" defaultValue={t?.note ?? ''} className="field" />
+        </Field>
+        {branches.length > 1 && (
+          <Field label="Filial">
+            <select name="branchId" defaultValue={t?.branchId ?? currentBranch ?? branches[0]?.id} className="field">
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+      </div>
     </ActionForm>
   );
 }
 
-function Reconciliation({ month, system, rec }: { month: string; system: Record<string, number>; rec: { bank: Record<string, number>; tax: Record<string, number>; note: string | null } | null }) {
+function Reconciliation({ month, system, rec, multi }: { multi: boolean; month: string; system: Record<string, number>; rec: { bank: Record<string, number>; tax: Record<string, number>; note: string | null } | null }) {
   const [bank, setBank] = useState<Record<string, string>>({});
   const [tax, setTax] = useState<Record<string, string>>({});
   useEffect(() => {
@@ -332,7 +349,7 @@ function Reconciliation({ month, system, rec }: { month: string; system: Record<
   return (
     <Card>
       <div className="border-b border-line px-5 py-4">
-        <h2 className="text-[15px] font-bold">{fmtMonth(month)} solishtirmasi</h2>
+        <h2 className="text-[15px] font-bold">{fmtMonth(month)} solishtirmasi{multi && ', butun markaz'}</h2>
         <p className="mt-0.5 max-w-3xl text-[13px] text-fg-muted">
           Bugalter har oyning 5-sanasigacha bank ko&apos;chirmasi va soliq hisobotidagi raqamlarni kiritadi. Farq 0 bo&apos;lmasa, sababini topib tuzatmaguncha hisobot topshirilmaydi.
         </p>

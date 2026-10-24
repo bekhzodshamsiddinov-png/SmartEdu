@@ -4,12 +4,14 @@ import { can, ROLE_LABELS } from '@/lib/roles';
 import { NAV } from '@/components/shell/nav';
 import { Shell } from '@/components/shell/shell';
 import { getSettings } from '@/lib/settings';
+import { allBranches, getBranchScope } from '@/lib/branch';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const user = await requireUser();
   const s = await getSettings();
+  const [branches, scope] = await Promise.all([allBranches(), getBranchScope()]);
   const items = NAV.filter((n) => can(user.role, n.section));
   const quick = [
     can(user.role, 'students') && user.role !== 'oqituvchi' && user.role !== 'support' && { href: '/oquvchilar?yangi=1', label: "O'quvchi qo'shish" },
@@ -21,7 +23,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     { href: '/hisobotlar?yangi=1', label: 'Kunlik hisobot yozish' },
   ].filter(Boolean) as { href: string; label: string }[];
   return (
-    <Shell items={items} user={{ fullName: user.fullName, roleLabel: user.position || ROLE_LABELS[user.role] }} centerName={s.centerName} quick={quick}>
+    <Shell branch={{ list: branches.filter((b) => b.active).map((b) => ({ id: b.id, name: b.name })), current: scope.id, locked: scope.locked }} items={items} user={{ fullName: user.fullName, roleLabel: user.position || ROLE_LABELS[user.role] }} centerName={s.centerName} quick={quick}>
       {children}
     </Shell>
   );

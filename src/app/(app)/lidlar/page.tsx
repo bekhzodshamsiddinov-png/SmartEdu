@@ -5,6 +5,7 @@ import { leads, courses, users, notes } from '@/db/schema';
 import { requireSection } from '@/lib/auth';
 import { courseOptions, groupOptions, staffOptions } from '@/lib/options';
 import { LeadsView } from './view';
+import { getBranchScope } from '@/lib/branch';
 
 export const metadata = { title: 'Lidlar' };
 
@@ -12,6 +13,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
   const user = await requireSection('leads');
   const assignee = alias(users, 'assignee');
+  const scope = await getBranchScope();
   const [rows, copts, sales, gopts] = await Promise.all([
     db
       .select({
@@ -35,11 +37,11 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       .from(leads)
       .leftJoin(courses, eq(courses.id, leads.courseId))
       .leftJoin(assignee, eq(assignee.id, leads.assignedToId))
-      .where(sql`${leads.createdAt} > now() - interval '180 days' or ${leads.stage} not in ('tolov_qildi','rad_etdi')`)
+      .where(sql`(${leads.createdAt} > now() - interval '180 days' or ${leads.stage} not in ('tolov_qildi','rad_etdi')) ${scope.id ? sql`and ${leads.branchId} = ${scope.id}` : sql``}`)
       .orderBy(desc(leads.updatedAt)),
     courseOptions(),
     staffOptions(['sotuv', 'admin', 'rahbar', 'marketing']),
-    groupOptions(),
+    groupOptions(scope.id),
   ]);
   const pid = Number(sp.id);
   const history = pid

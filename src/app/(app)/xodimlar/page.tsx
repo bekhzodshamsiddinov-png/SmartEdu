@@ -4,6 +4,7 @@ import { users } from '@/db/schema';
 import { requireSection } from '@/lib/auth';
 import { monthEnd, monthStart, thisMonth, today } from '@/lib/dates';
 import { StaffView } from './view';
+import { allBranches } from '@/lib/branch';
 
 export const metadata = { title: 'Xodimlar' };
 
@@ -14,7 +15,7 @@ export default async function StaffPage() {
   const to = monthEnd(m);
   const t = today();
   const [list, teach, admin, sales, tasks, reports] = await Promise.all([
-    db.select({ id: users.id, fullName: users.fullName, phone: users.phone, role: users.role, position: users.position, baseSalary: users.baseSalary, bonusRule: users.bonusRule, active: users.active, hiredAt: users.hiredAt }).from(users).orderBy(asc(users.active), asc(users.fullName)),
+    db.select({ id: users.id, branchId: users.branchId, fullName: users.fullName, phone: users.phone, role: users.role, position: users.position, baseSalary: users.baseSalary, bonusRule: users.bonusRule, active: users.active, hiredAt: users.hiredAt }).from(users).orderBy(asc(users.active), asc(users.fullName)),
     db.execute<{ uid: number; groups: number; students: number; lessons: number; late: number; missed: number; att_total: number; att_present: number }>(sql`
       select u.id uid,
         (select count(*) from groups g where g.active and (g.teacher_id = u.id or g.support_id = u.id))::int groups,
@@ -47,8 +48,10 @@ export default async function StaffPage() {
   ]);
   const by = <T extends { uid: number }>(arr: T[]) => new Map(arr.map((x) => [x.uid, x]));
   const T = by(teach), A = by(admin), S = by(sales), K = by(tasks), R = by(reports);
+  const branches = (await allBranches()).filter((b) => b.active).map((b) => ({ id: b.id, name: b.name }));
   return (
     <StaffView
+      branches={branches}
       meId={me.id}
       month={m}
       staff={list.map((u) => ({

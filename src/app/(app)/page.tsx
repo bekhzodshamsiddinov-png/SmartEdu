@@ -12,6 +12,7 @@ import { attendanceRate, funnel, incomeExpense, leftReasons, monthlySeries, stud
 import { Badge, Card, CardHeader, Empty, Stat, cn } from '@/components/ui';
 import { PeriodTabs, parsePeriod } from '@/components/period-tabs';
 import { MoneyBars } from '@/components/charts/money-bars';
+import { getBranchScope } from '@/lib/branch';
 
 export const metadata = { title: 'Bosh sahifa' };
 
@@ -22,13 +23,15 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const range = periodRange(period);
   const t = today();
   const money_ = seesMoney(user.role);
+  const scope = await getBranchScope();
+  const B = scope.id;
 
   const [flow, att, fun, byCourse, reasons, balances, streak, todayGroups, todayLessons, todayAtt, overdue] = await Promise.all([
-    studentFlow(range.from, range.to),
-    attendanceRate(range.from, range.to),
-    funnel(range.from, range.to),
-    studentsByCourse(),
-    leftReasons(range.from, range.to),
+    studentFlow(range.from, range.to, B),
+    attendanceRate(range.from, range.to, B),
+    funnel(range.from, range.to, B),
+    studentsByCourse(B),
+    leftReasons(range.from, range.to, B),
     getBalances(t),
     absentStreakIds(),
     db
@@ -36,7 +39,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       .from(groups)
       .innerJoin(courses, eq(courses.id, groups.courseId))
       .leftJoin(users, eq(users.id, groups.teacherId))
-      .where(eq(groups.active, true))
+      .where(and(eq(groups.active, true), B ? eq(groups.branchId, B) : undefined))
       .orderBy(asc(groups.startTime)),
     db.select().from(lessons).where(eq(lessons.date, t)),
     db.execute<{ group_id: number; total: number; present: number }>(sql`select group_id, count(*)::int total, count(*) filter (where status in ('keldi','kechikdi'))::int present from attendance where date = ${t} group by group_id`),
@@ -48,10 +51,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       .orderBy(asc(tasks.dueDate))
       .limit(5),
   ]);
-  const ie = money_ ? await incomeExpense(range.from, range.to) : null;
-  const series = money_ ? await monthlySeries(thisMonth(), 12) : [];
+  const ie = money_ ? await incomeExpense(range.from, range.to, B) : null;
+  const series = money_ ? await monthlySeries(thisMonth(), 12, B) : [];
 
-  const activeIds = await db.select({ id: students.id, name: students.fullName }).from(students).where(sql`${students.status} in ('faol','xavf')`);
+  const activeIds = await db.select({ id: students.id, name: students.fullName }).from(students).where(sql`${students.status} in ('faol','xavf') ${B ? sql`and ${students.branchId} = ${B}` : sql``}`);
   const activeMap = new Map(activeIds.map((s) => [s.id, s.name]));
   const debtors = [...balances.entries()]
     .filter(([id, b]) => activeMap.has(id) && b.balance < 0)
@@ -74,6 +77,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <div>
           <p className="text-sm font-medium text-fg-muted">
             {WEEKDAYS_FULL[weekday(t)]}, {fmtDate(t)}
+            {scope.name && <span className="ml-2 rounded-full bg-brand-soft px-2 py-0.5 text-xs font-bold text-brand-strong">{scope.name}</span>}
           </p>
           <h1 className="mt-1 text-[28px] font-extrabold leading-tight tracking-[-0.02em]">Assalomu alaykum, {first}</h1>
         </div>

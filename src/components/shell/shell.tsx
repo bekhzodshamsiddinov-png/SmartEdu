@@ -10,6 +10,7 @@ import { Logo } from '@/components/logo';
 import { Avatar, cn } from '@/components/ui';
 import { logout } from '@/app/actions/auth';
 import { SearchBox } from './search';
+import { BranchSwitcher } from './branch-switcher';
 import type { NavItem } from './nav';
 
 const ICONS: Record<string, typeof Home> = {
@@ -24,8 +25,10 @@ export function Shell({
   user,
   centerName,
   quick,
+  branch,
   children,
 }: {
+  branch: { list: { id: number; name: string }[]; current: number | null; locked: boolean };
   items: NavItem[];
   user: { fullName: string; roleLabel: string };
   centerName: string;
@@ -116,6 +119,7 @@ export function Shell({
           <div className="min-w-0 flex-1">
             <SearchBox />
           </div>
+          <BranchSwitcher branches={branch.list} current={branch.current} locked={branch.locked} />
           {quick.length > 0 && <QuickAddMenu quick={quick} />}
         </div>
       </header>

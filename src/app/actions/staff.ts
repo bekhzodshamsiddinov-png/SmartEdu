@@ -21,6 +21,7 @@ export async function saveStaff(id: number | null, fd: FormData) {
       baseSalary: int(fd, 'baseSalary') ?? 0,
       bonusRule: str(fd, 'bonusRule'),
       hiredAt: str(fd, 'hiredAt'),
+      branchId: role === 'rahbar' ? null : int(fd, 'branchId'),
     };
     const pw = str(fd, 'password');
     if (id) {

@@ -6,6 +6,7 @@ import { assertSection } from '@/lib/auth';
 import { run, str, req, int } from '@/lib/action';
 import { today } from '@/lib/dates';
 import { RECON_ROWS } from '@/lib/finance';
+import { branchForNew } from '@/lib/branch';
 
 export async function saveTransaction(id: number | null, fd: FormData) {
   return run(async () => {
@@ -23,6 +24,7 @@ export async function saveTransaction(id: number | null, fd: FormData) {
       document: str(fd, 'document'),
       note: str(fd, 'note'),
       createdById: u.id,
+      branchId: int(fd, 'branchId') ?? (id ? undefined : await branchForNew()),
     };
     if (type === 'chiqim' && !v.document && v.method !== 'naqd') {
       // hujjat raqami tavsiya etiladi, lekin majburiy emas

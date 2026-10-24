@@ -6,6 +6,7 @@ import { seesMoney } from '@/lib/roles';
 import { absentStreakIds, getBalances } from '@/lib/finance';
 import { groupOptions, courseOptions } from '@/lib/options';
 import { StudentsView, type StudentRow, type Profile } from './view';
+import { getBranchScope } from '@/lib/branch';
 
 export const metadata = { title: "O'quvchilar" };
 
@@ -13,6 +14,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const user = await requireSection('students');
   const mine = user.role === 'oqituvchi' || user.role === 'support';
+  const scope = await getBranchScope();
 
   const [all, enr, balances, gopts, copts, streak] = await Promise.all([
     db.select().from(students).orderBy(desc(students.id)),
@@ -36,7 +38,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
       .innerJoin(groups, eq(groups.id, enrollments.groupId))
       .innerJoin(courses, eq(courses.id, groups.courseId)),
     getBalances(),
-    groupOptions(),
+    groupOptions(scope.id),
     courseOptions(),
     absentStreakIds(),
   ]);
@@ -44,7 +46,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
   const byStudent = new Map<number, typeof enr>();
   for (const e of enr) byStudent.set(e.studentId, [...(byStudent.get(e.studentId) ?? []), e]);
 
-  let rows: StudentRow[] = all.map((s) => {
+  let rows: StudentRow[] = all.filter((s) => !scope.id || s.branchId === scope.id).map((s) => {
     const es = byStudent.get(s.id) ?? [];
     const cur = es.filter((e) => e.active && !e.endDate);
     const b = balances.get(s.id);

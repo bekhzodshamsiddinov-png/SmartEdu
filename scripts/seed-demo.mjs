@@ -7,16 +7,18 @@ const today = tz(new Date());
 const addDays = (s, n) => { const d = s instanceof Date ? new Date(s) : new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const rnd = (a) => a[Math.floor(Math.random() * a.length)];
 
-await sql`truncate lesson_progress, course_orders, promo_codes, learners, course_lessons, course_modules, online_courses, staff_reports, tasks, graduates, results, grades, notes, leads, reconciliations, transactions, payments, attendance, lessons, enrollments, students, groups, courses, users, settings restart identity cascade`;
+await sql`truncate branches, lesson_progress, course_orders, promo_codes, learners, course_lessons, course_modules, online_courses, staff_reports, tasks, graduates, results, grades, notes, leads, reconciliations, transactions, payments, attendance, lessons, enrollments, students, groups, courses, users, settings restart identity cascade`;
 const hash = await bcrypt.hash('123456', 10);
 await sql`insert into settings (id, center_name) values (1, 'United IT Clubs')`;
+const [br1] = await sql`insert into branches (name, address) values ('Davlatobod filiali', 'Davlatobod tumani') returning id`;
+const [br2] = await sql`insert into branches (name, address) values ('Namangan shahar filiali', 'Namangan shahri') returning id`;
 const [boss] = await sql`insert into users (full_name, phone, password_hash, role, position) values ('Bekhzod Shamsiddinov', '998901234567', ${hash}, 'rahbar', 'Asoschi, rahbar') returning id`;
 const staff = await sql`insert into users ${sql([
-  { full_name: 'Dilnoza Rahimova', phone: '998901111111', password_hash: hash, role: 'admin', base_salary: 3500000 },
-  { full_name: 'Sardor Tursunov', phone: '998902222222', password_hash: hash, role: 'oqituvchi', base_salary: 5000000 },
-  { full_name: 'Malika Yusupova', phone: '998903333333', password_hash: hash, role: 'oqituvchi', base_salary: 4500000 },
-  { full_name: 'Jasur Qodirov', phone: '998904444444', password_hash: hash, role: 'sotuv', base_salary: 2500000 },
-  { full_name: 'Nodira Karimova', phone: '998905555555', password_hash: hash, role: 'bugalter', base_salary: 3000000 },
+  { full_name: 'Dilnoza Rahimova', phone: '998901111111', password_hash: hash, role: 'admin', base_salary: 3500000, branch_id: br1.id },
+  { full_name: 'Sardor Tursunov', phone: '998902222222', password_hash: hash, role: 'oqituvchi', base_salary: 5000000, branch_id: null },
+  { full_name: 'Malika Yusupova', phone: '998903333333', password_hash: hash, role: 'oqituvchi', base_salary: 4500000, branch_id: null },
+  { full_name: 'Jasur Qodirov', phone: '998904444444', password_hash: hash, role: 'sotuv', base_salary: 2500000, branch_id: null },
+  { full_name: 'Nodira Karimova', phone: '998905555555', password_hash: hash, role: 'bugalter', base_salary: 3000000, branch_id: null },
 ])} returning id, role`;
 const [admin, t1, t2, sales, buh] = staff.map((s) => s.id);
 const courses = await sql`insert into courses ${sql([
@@ -26,12 +28,12 @@ const courses = await sql`insert into courses ${sql([
   { name: 'Fullstack AI dasturlash', monthly_price: 700000, duration_months: 6, color: '#7A5BC7' },
 ])} returning id`;
 const groups = await sql`insert into groups ${sql([
-  { name: 'KS-5', course_id: courses[0].id, teacher_id: t2, days: 'Du,Chor,Ju', start_time: '09:00', end_time: '11:00', room: '1', capacity: 15, start_date: addDays(today, -80) },
-  { name: 'AI-3', course_id: courses[1].id, teacher_id: t1, days: 'Du,Chor,Ju', start_time: '14:00', end_time: '16:00', room: '2', capacity: 12, start_date: addDays(today, -60) },
-  { name: 'AI-4', course_id: courses[1].id, teacher_id: t1, days: 'Se,Pa,Sha', start_time: '16:00', end_time: '18:00', room: '2', capacity: 12, start_date: addDays(today, -20) },
-  { name: 'YT-2', course_id: courses[2].id, teacher_id: t2, days: 'Se,Pa,Sha', start_time: '10:00', end_time: '12:00', room: '1', capacity: 10, start_date: addDays(today, -40) },
-  { name: 'FS-1', course_id: courses[3].id, teacher_id: t1, days: 'Du,Se,Chor,Pa,Ju', start_time: '18:00', end_time: '20:00', room: '3', capacity: 10, start_date: addDays(today, -120) },
-])} returning id, course_id, start_date::text, days`;
+  { name: 'KS-5', course_id: courses[0].id, teacher_id: t2, days: 'Du,Chor,Ju', start_time: '09:00', end_time: '11:00', room: '1', capacity: 15, start_date: addDays(today, -80), branch_id: br1.id },
+  { name: 'AI-3', course_id: courses[1].id, teacher_id: t1, days: 'Du,Chor,Ju', start_time: '14:00', end_time: '16:00', room: '2', capacity: 12, start_date: addDays(today, -60), branch_id: br1.id },
+  { name: 'AI-4', course_id: courses[1].id, teacher_id: t1, days: 'Se,Pa,Sha', start_time: '16:00', end_time: '18:00', room: '2', capacity: 12, start_date: addDays(today, -20), branch_id: br1.id },
+  { name: 'YT-2', course_id: courses[2].id, teacher_id: t2, days: 'Se,Pa,Sha', start_time: '10:00', end_time: '12:00', room: '1', capacity: 10, start_date: addDays(today, -40), branch_id: br2.id },
+  { name: 'FS-1', course_id: courses[3].id, teacher_id: t1, days: 'Du,Se,Chor,Pa,Ju', start_time: '18:00', end_time: '20:00', room: '3', capacity: 10, start_date: addDays(today, -120), branch_id: br2.id },
+])} returning id, course_id, start_date::text, days, branch_id`;
 const first = ['Azizbek', 'Sevara', 'Jahongir', 'Madina', 'Otabek', 'Zarina', 'Bobur', 'Kamola', 'Sherzod', 'Nilufar', 'Doniyor', 'Gulnoza', 'Islom', 'Shahnoza', 'Ulugbek', 'Dildora', 'Javohir', 'Maftuna', 'Akmal', 'Lola', 'Sanjar', 'Feruza', 'Asadbek', 'Muslima', 'Abdulloh', 'Robiya', 'Temur', 'Oysha', 'Behruz', 'Mohinur'];
 const last = ['Karimov', 'Aliyeva', 'Tursunov', 'Rashidova', 'Yuldashev', 'Ergasheva', 'Nazarov', 'Saidova', 'Ismoilov', 'Hamidova'];
 const price = Object.fromEntries((await sql`select id, monthly_price from courses`).map((c) => [c.id, c.monthly_price]));
@@ -43,7 +45,7 @@ for (const g of groups) {
     const name = `${first[n % first.length]} ${last[(n * 7) % last.length]}${first[n % first.length].endsWith('a') && !last[(n * 7) % last.length].endsWith('a') ? 'a' : ''}`;
     n++;
     const start = addDays(g.start_date, Math.floor(Math.random() * 10));
-    const [s] = await sql`insert into students (full_name, phone, parent_name, parent_phone, joined_at, source, school) values (${name}, ${'99890' + String(1000000 + n * 7919).slice(0, 7)}, ${'Ota-onasi'}, ${'99893' + String(2000000 + n * 3571).slice(0, 7)}, ${start}, ${rnd(['Instagram', 'Tavsiya', 'Target', 'Ofisga keldi'])}, ${rnd(['12-maktab', '5-maktab', 'Litsey', '21-maktab'])}) returning id`;
+    const [s] = await sql`insert into students (branch_id, full_name, phone, parent_name, parent_phone, joined_at, source, school) values (${g.branch_id}, ${name}, ${'99890' + String(1000000 + n * 7919).slice(0, 7)}, ${'Ota-onasi'}, ${'99893' + String(2000000 + n * 3571).slice(0, 7)}, ${start}, ${rnd(['Instagram', 'Tavsiya', 'Target', 'Ofisga keldi'])}, ${rnd(['12-maktab', '5-maktab', 'Litsey', '21-maktab'])}) returning id`;
     const [e] = await sql`insert into enrollments (student_id, group_id, monthly_fee, start_date) values (${s.id}, ${g.id}, ${price[g.course_id]}, ${start}) returning id`;
     studentIds.push({ id: s.id, g: g.id, e: e.id, fee: price[g.course_id], start });
   }
@@ -90,7 +92,7 @@ const stages = ['yangi', 'yangi', 'boglanildi', 'sinov_yozildi', 'sinov_keldi', 
 const idx = { yangi: 0, boglanildi: 1, sinov_yozildi: 2, sinov_keldi: 3, tolov_qildi: 4, rad_etdi: 1 };
 for (let i = 0; i < 18; i++) {
   const st = stages[i % stages.length];
-  await sql`insert into leads (full_name, phone, source, course_id, stage, max_stage, assigned_to_id, trial_date, lost_reason, created_at, updated_at) values (${first[(i * 3) % first.length] + ' ' + last[i % last.length]}, ${'99897' + String(3000000 + i * 4111).slice(0, 7)}, ${rnd(['Instagram', 'Target', 'Telegram', 'Tavsiya', 'Ofisga keldi'])}, ${rnd(courses).id}, ${st}, ${idx[st]}, ${sales}, ${st === 'sinov_yozildi' ? addDays(today, 2) : null}, ${st === 'rad_etdi' ? 'Narx qimmat' : null}, ${new Date(Date.now() - i * 1.3 * 86400000)}, ${new Date(Date.now() - i * 86400000)})`;
+  await sql`insert into leads (branch_id, full_name, phone, source, course_id, stage, max_stage, assigned_to_id, trial_date, lost_reason, created_at, updated_at) values (${i % 3 ? br1.id : br2.id}, ${first[(i * 3) % first.length] + ' ' + last[i % last.length]}, ${'99897' + String(3000000 + i * 4111).slice(0, 7)}, ${rnd(['Instagram', 'Target', 'Telegram', 'Tavsiya', 'Ofisga keldi'])}, ${rnd(courses).id}, ${st}, ${idx[st]}, ${sales}, ${st === 'sinov_yozildi' ? addDays(today, 2) : null}, ${st === 'rad_etdi' ? 'Narx qimmat' : null}, ${new Date(Date.now() - i * 1.3 * 86400000)}, ${new Date(Date.now() - i * 86400000)})`;
 }
 // transactions 6 months
 for (let m = 5; m >= 0; m--) {
@@ -98,11 +100,12 @@ for (let m = 5; m >= 0; m--) {
   const d = base.toISOString().slice(0, 10);
   if (d > today) continue;
   await sql`insert into transactions ${sql([
-    { type: 'chiqim', category: 'Ijara', amount: 4000000, date: d, method: 'bank', counterparty: 'Ijara beruvchi', document: 'Shartnoma No 12' },
-    { type: 'chiqim', category: 'Kommunal va internet', amount: 900000, date: d, method: 'bank', counterparty: 'Uztelecom', document: null },
-    { type: 'chiqim', category: 'Oylik', amount: 18500000, date: addDays(d, 7), method: 'bank', counterparty: 'Xodimlar', document: 'Vedomost' },
-    { type: 'chiqim', category: 'Marketing', amount: 1500000 + m * 100000, date: addDays(d, 2), method: 'karta', counterparty: 'Instagram target', document: null },
-    { type: 'chiqim', category: 'Soliqlar', amount: 2200000, date: addDays(d, 10), method: 'bank', counterparty: 'Soliq', document: 'To\'lov topshiriqnomasi' },
+    { type: 'chiqim', category: 'Ijara', amount: 3000000, date: d, method: 'bank', counterparty: 'Shahar ijara', document: 'Shartnoma No 3', branch_id: br2.id },
+    { type: 'chiqim', category: 'Ijara', amount: 4000000, date: d, method: 'bank', counterparty: 'Ijara beruvchi', document: 'Shartnoma No 12', branch_id: br1.id },
+    { type: 'chiqim', category: 'Kommunal va internet', amount: 900000, date: d, method: 'bank', counterparty: 'Uztelecom', document: null, branch_id: br1.id },
+    { type: 'chiqim', category: 'Oylik', amount: 18500000, date: addDays(d, 7), method: 'bank', counterparty: 'Xodimlar', document: 'Vedomost', branch_id: br1.id },
+    { type: 'chiqim', category: 'Marketing', amount: 1500000 + m * 100000, date: addDays(d, 2), method: 'karta', counterparty: 'Instagram target', document: null, branch_id: br1.id },
+    { type: 'chiqim', category: 'Soliqlar', amount: 2200000, date: addDays(d, 10), method: 'bank', counterparty: 'Soliq', document: 'To\'lov topshiriqnomasi', branch_id: br1.id },
   ])}`;
 }
 await sql`insert into tasks (title, assignee_id, creator_id, due_date, priority) values ('Oktabr qarzdorlari bilan uchrashish', ${admin}, ${boss.id}, ${addDays(today, -1)}, 'yuqori'), ('AI-4 guruhi uchun dars rejasini yuklash', ${t1}, ${boss.id}, ${addDays(today, 3)}, 'orta'), ('Bitiruvchilar bazasini yig''ish', ${sales}, ${boss.id}, ${addDays(today, 5)}, 'orta')`;

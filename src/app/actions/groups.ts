@@ -1,10 +1,11 @@
 'use server';
 import { eq, and, isNull } from 'drizzle-orm';
 import { db } from '@/db';
-import { groups, courses, enrollments } from '@/db/schema';
+import { groups, courses, enrollments, students } from '@/db/schema';
 import { assertSection } from '@/lib/auth';
 import { run, str, req, int, bool } from '@/lib/action';
 import { DAY_CODES } from '@/lib/dates';
+import { branchForNew } from '@/lib/branch';
 
 function onlyManagers(role: string) {
   if (!['rahbar', 'admin'].includes(role)) throw new Error("Guruhlarni rahbar yoki administrator boshqaradi.");
@@ -33,6 +34,7 @@ export async function saveGroup(id: number | null, fd: FormData) {
       room: str(fd, 'room'),
       capacity: int(fd, 'capacity') ?? 14,
       startDate: str(fd, 'startDate'),
+      branchId: int(fd, 'branchId') ?? (id ? undefined : await branchForNew()),
     };
     if (id) await db.update(groups).set(v).where(eq(groups.id, id));
     else await db.insert(groups).values(v);
@@ -87,6 +89,8 @@ export async function moveStudent(enrollmentId: number, fd: FormData) {
     const d = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date());
     await db.update(enrollments).set({ active: false, endDate: d }).where(eq(enrollments.id, enrollmentId));
     await db.insert(enrollments).values({ studentId: e.studentId, groupId, monthlyFee: e.monthlyFee, startDate: d });
+    const [g] = await db.select({ b: groups.branchId }).from(groups).where(eq(groups.id, groupId));
+    if (g?.b) await db.update(students).set({ branchId: g.b }).where(eq(students.id, e.studentId));
     return { message: "Boshqa guruhga o'tkazildi" };
   });
 }

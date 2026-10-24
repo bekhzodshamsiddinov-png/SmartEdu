@@ -4,6 +4,7 @@ import { db } from '@/db';
 import type { Role } from '@/db/schema';
 import { addDays, groupHasLessonOn, monthStart, weekday } from './dates';
 import { getSettings } from './settings';
+import { andBranch } from './branch';
 
 export type Item = { key: string; label: string; done: number; total: number; href?: string; hint?: string };
 export type StaffDay = { id: number; fullName: string; role: Role; items: Item[]; score: number | null };
@@ -24,7 +25,7 @@ export function scoreOf(items: Item[]) {
 
 type Base = Awaited<ReturnType<typeof loadBase>>;
 
-async function loadBase(date: string) {
+async function loadBase(date: string, branch: number | null = null) {
   const week = weekRange(date);
   const month = date.slice(0, 7);
   const prevMonth = (() => {
@@ -33,15 +34,15 @@ async function loadBase(date: string) {
     return d.toISOString().slice(0, 7);
   })();
   const [staff, groups, lessons, att, absences, reports, notesBy, overdue, parentGroups, recon, exp, leadsStale, debt, grades] = await Promise.all([
-    db.execute<{ id: number; full_name: string; role: Role }>(sql`select id, full_name, role from users where active order by role, full_name`),
+    db.execute<{ id: number; full_name: string; role: Role; branch_id: number | null }>(sql`select id, full_name, role, branch_id from users where active order by role, full_name`),
     db.execute<{ id: number; name: string; days: string; teacher_id: number | null; support_id: number | null; start_time: string }>(
-      sql`select id, name, days, teacher_id, support_id, start_time from groups where active order by start_time`,
+      sql`select id, name, days, teacher_id, support_id, start_time from groups where active ${andBranch('branch_id', branch)} order by start_time`,
     ),
     db.execute<{ group_id: number; topic: string | null; teacher_status: string; arrival_checked: boolean }>(
       sql`select group_id, topic, teacher_status, arrival_checked from lessons where date = ${date}`,
     ),
     db.execute<{ group_id: number; c: number }>(sql`select group_id, count(*)::int c from attendance where date = ${date} group by 1`),
-    db.execute<{ id: number; group_id: number; called: boolean }>(sql`select id, group_id, called from attendance where date between ${addDays(date, -3)} and ${date} and status = 'kelmadi'`),
+    db.execute<{ id: number; group_id: number; called: boolean }>(sql`select a.id, a.group_id, a.called from attendance a join groups g on g.id = a.group_id where a.date between ${addDays(date, -3)} and ${date} and a.status = 'kelmadi' ${andBranch('g.branch_id', branch)}`),
     db.execute<{ user_id: number }>(sql`select distinct user_id from staff_reports where date = ${date}`),
     db.execute<{ author_id: number; calls: number }>(
       sql`select author_id, count(*)::int calls from notes where kind = 'qongiroq' and (created_at at time zone 'Asia/Tashkent')::date = ${date} group by 1`,
@@ -55,11 +56,11 @@ async function loadBase(date: string) {
     db.execute<{ month: string }>(sql`select month from reconciliations where month = ${prevMonth}`),
     db.execute<{ total: number; with_doc: number }>(sql`
       select count(*)::int total, count(*) filter (where document is not null and document <> '')::int with_doc
-      from transactions where type = 'chiqim' and date between ${monthStart(month)} and ${date}`),
+      from transactions where type = 'chiqim' and date between ${monthStart(month)} and ${date} ${andBranch('branch_id', branch)}`),
     db.execute<{ assigned_to_id: number | null; total: number; stale: number }>(sql`
       select assigned_to_id, count(*)::int total,
         count(*) filter (where stage = 'yangi' and created_at < (${date}::date - interval '1 day'))::int stale
-      from leads where created_at::date between ${addDays(date, -7)} and ${date} group by 1`),
+      from leads where created_at::date between ${addDays(date, -7)} and ${date} ${andBranch('branch_id', branch)} group by 1`),
     db.execute<{ debtors: number; reminded: number }>(sql`
       with bal as (
         select s.id,
@@ -68,7 +69,7 @@ async function loadBase(date: string) {
               (extract(year from least(coalesce(e.end_date, ${date}::date), ${date}::date)) * 12 + extract(month from least(coalesce(e.end_date, ${date}::date), ${date}::date)))
               - (extract(year from e.start_date) * 12 + extract(month from e.start_date)) + 1))
             from enrollments e where e.student_id = s.id and e.start_date <= ${date}), 0) as balance
-        from students s where s.status in ('faol','xavf')
+        from students s where s.status in ('faol','xavf') ${andBranch('s.branch_id', branch)}
       )
       select count(*) filter (where balance < 0)::int debtors,
         count(*) filter (where balance < 0 and exists (
@@ -80,7 +81,7 @@ async function loadBase(date: string) {
         count(distinct gr.student_id)::int graded
       from groups g join enrollments e on e.group_id = g.id and e.active and e.end_date is null
       left join grades gr on gr.student_id = e.student_id and gr.period = ${month}
-      where g.active and g.teacher_id is not null group by 1`),
+      where g.active and g.teacher_id is not null ${andBranch('g.branch_id', branch)} group by 1`),
   ]);
   const s = await getSettings();
   const todays = groups.filter((g) => groupHasLessonOn(g.days, date));
@@ -167,10 +168,14 @@ function accountantItems(b: Base, uid: number): Item[] {
 }
 
 export async function complianceForDay(date: string): Promise<{ staff: StaffDay[]; base: Base }> {
-  const b = await loadBase(date);
-  const staff = b.staff
+  const all = await loadBase(date);
+  const ids = [...new Set(all.staff.map((u) => u.branch_id).filter((x): x is number => !!x))];
+  const per = new Map<number, Base>();
+  for (const id of ids) per.set(id, await loadBase(date, id));
+  const staff = all.staff
     .filter((u) => u.role !== 'rahbar')
     .map((u) => {
+      const b = (u.branch_id && per.get(u.branch_id)) || all;
       const items =
         u.role === 'admin'
           ? adminItems(b, u.id)
@@ -183,11 +188,11 @@ export async function complianceForDay(date: string): Promise<{ staff: StaffDay[
                 : common(b, u.id);
       return { id: u.id, fullName: u.full_name, role: u.role, items, score: scoreOf(items) };
     });
-  return { staff, base: b };
+  return { staff, base: all };
 }
 
-export async function adminChecklist(date: string, uid: number) {
-  const b = await loadBase(date);
+export async function adminChecklist(date: string, uid: number, branch: number | null = null) {
+  const b = await loadBase(date, branch);
   const items = adminItems(b, uid);
   return { items, score: scoreOf(items), base: b };
 }

@@ -4,7 +4,8 @@ import { staffReports, users } from '@/db/schema';
 import { requireSection } from '@/lib/auth';
 import { seesMoney } from '@/lib/roles';
 import { monthEnd, monthStart, thisMonth } from '@/lib/dates';
-import { attendanceRate, expensesByCategory, funnel, incomeExpense, leftReasons, revenueByCourse, studentFlow } from '@/lib/stats';
+import { attendanceRate, branchComparison, expensesByCategory, funnel, incomeExpense, leftReasons, revenueByCourse, studentFlow } from '@/lib/stats';
+import { allBranches, andBranch, getBranchScope } from '@/lib/branch';
 import { ReportsView } from './view';
 
 export const metadata = { title: 'Hisobotlar' };
@@ -18,6 +19,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const tab = sp.tab === 'xodim' || sp.yangi === '1' ? 'xodim' : 'oylik';
   const manager = ['rahbar', 'admin', 'bugalter'].includes(user.role);
   const showMonthly = manager;
+  const scope = await getBranchScope();
+  const B = scope.id;
+  const multi = (await allBranches()).filter((b) => b.active).length > 1;
 
   const reports = await db
     .select({ id: staffReports.id, date: staffReports.date, kind: staffReports.kind, done: staffReports.done, problems: staffReports.problems, plan: staffReports.plan, user: users.fullName, role: users.role, userId: staffReports.userId })
@@ -30,22 +34,22 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   let monthly = null;
   if (showMonthly) {
     const [flow, att, fun, reasons, ie, rev, exp, byCourse, bySource, byGroup, res] = await Promise.all([
-      studentFlow(from, to),
-      attendanceRate(from, to),
-      funnel(from, to),
-      leftReasons(from, to),
-      seesMoney(user.role) ? incomeExpense(from, to) : null,
-      seesMoney(user.role) ? revenueByCourse(from, to) : [],
-      seesMoney(user.role) ? expensesByCategory(from, to) : [],
+      studentFlow(from, to, B),
+      attendanceRate(from, to, B),
+      funnel(from, to, B),
+      leftReasons(from, to, B),
+      seesMoney(user.role) ? incomeExpense(from, to, B) : null,
+      seesMoney(user.role) ? revenueByCourse(from, to, B) : [],
+      seesMoney(user.role) ? expensesByCategory(from, to, B) : [],
       db.execute<{ name: string; color: string; active: number; joined: number; left: number }>(sql`
         select c.name, c.color,
           count(distinct s.id) filter (where s.status in ('faol','xavf') and e.active and e.end_date is null)::int active,
           count(distinct s.id) filter (where e.start_date between ${from} and ${to})::int joined,
           count(distinct s.id) filter (where s.left_at between ${from} and ${to})::int "left"
-        from courses c left join groups g on g.course_id = c.id left join enrollments e on e.group_id = g.id left join students s on s.id = e.student_id
+        from courses c left join groups g on g.course_id = c.id ${andBranch('g.branch_id', B)} left join enrollments e on e.group_id = g.id left join students s on s.id = e.student_id
         group by c.id order by c.id`),
       db.execute<{ source: string; total: number; paid: number }>(sql`
-        select source, count(*)::int total, count(*) filter (where max_stage >= 4)::int paid from leads where created_at::date between ${from} and ${to} group by 1 order by 2 desc`),
+        select source, count(*)::int total, count(*) filter (where max_stage >= 4)::int paid from leads where created_at::date between ${from} and ${to} ${andBranch('branch_id', B)} group by 1 order by 2 desc`),
       db.execute<{ name: string; teacher: string | null; total: number; present: number; lessons: number; late: number; missed: number }>(sql`
         select g.name, u.full_name teacher,
           (select count(*) from attendance a where a.group_id = g.id and a.date between ${from} and ${to})::int total,
@@ -53,8 +57,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           (select count(*) from lessons l where l.group_id = g.id and l.date between ${from} and ${to})::int lessons,
           (select count(*) from lessons l where l.group_id = g.id and l.teacher_status = 'kechikdi' and l.date between ${from} and ${to})::int late,
           (select count(*) from lessons l where l.group_id = g.id and l.teacher_status = 'otilmadi' and l.date between ${from} and ${to})::int missed
-        from groups g left join users u on u.id = g.teacher_id where g.active order by g.name`),
-      db.execute<{ type: string; c: number }>(sql`select type, count(*)::int c from results where date between ${from} and ${to} group by 1 order by 2 desc`),
+        from groups g left join users u on u.id = g.teacher_id where g.active ${andBranch('g.branch_id', B)} order by g.name`),
+      db.execute<{ type: string; c: number }>(sql`select r.type, count(*)::int c from results r join students s on s.id = r.student_id where r.date between ${from} and ${to} ${andBranch('s.branch_id', B)} group by 1 order by 2 desc`),
     ]);
     monthly = {
       flow,
@@ -68,6 +72,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       bySource: [...bySource],
       byGroup: [...byGroup],
       results: [...res],
+      branches: !B && multi && seesMoney(user.role) ? (await branchComparison(from, to)).map((b) => ({ ...b, tuition: Number(b.tuition), other: Number(b.other), expense: Number(b.expense) })) : [],
+      branchName: scope.name,
     };
   }
 

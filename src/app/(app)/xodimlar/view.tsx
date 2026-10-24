@@ -12,7 +12,7 @@ import { money, phone, pct } from '@/lib/format';
 import { fmtMonth, fmtShort } from '@/lib/dates';
 
 type S = {
-  id: number; fullName: string; phone: string; role: Role; position: string | null; baseSalary: number; bonusRule: string | null; active: boolean; hiredAt: string | null;
+  id: number; branchId: number | null; fullName: string; phone: string; role: Role; position: string | null; baseSalary: number; bonusRule: string | null; active: boolean; hiredAt: string | null;
   teach: { groups: number; students: number; lessons: number; late: number; missed: number; att_total: number; att_present: number } | null;
   admin: { received: number; calls: number; parent: number } | null;
   sales: { leads: number; paid: number; calls: number } | null;
@@ -30,7 +30,7 @@ const ROLE_HINT: Record<Role, string> = {
   bugalter: "To'lovlar, moliya, solishtirma",
 };
 
-export function StaffView({ staff, meId, month }: { staff: S[]; meId: number; month: string }) {
+export function StaffView({ staff, meId, month, branches }: { staff: S[]; meId: number; month: string; branches: { id: number; name: string }[] }) {
   const [edit, setEdit] = useState<S | 'new' | null>(null);
   const fund = staff.filter((s) => s.active).reduce((a, s) => a + s.baseSalary, 0);
   return (
@@ -66,6 +66,7 @@ export function StaffView({ staff, meId, month }: { staff: S[]; meId: number; mo
                       <Phone className="h-3 w-3" /> {phone(s.phone)}
                     </a>
                     {s.position && <span>{s.position}</span>}
+                    {branches.length > 1 && <span>{s.role === 'rahbar' || !s.branchId ? 'Barcha filiallar' : branches.find((b) => b.id === s.branchId)?.name}</span>}
                     {s.baseSalary > 0 && <span>Oylik: {money(s.baseSalary)}</span>}
                   </div>
                 </div>
@@ -117,7 +118,7 @@ export function StaffView({ staff, meId, month }: { staff: S[]; meId: number; mo
         </div>
       )}
       <Modal open={!!edit} onClose={() => setEdit(null)} title={edit === 'new' ? 'Yangi xodim' : 'Xodimni tahrirlash'}>
-        {edit && <StaffForm s={edit === 'new' ? null : edit} onDone={() => setEdit(null)} />}
+        {edit && <StaffForm s={edit === 'new' ? null : edit} branches={branches} onDone={() => setEdit(null)} />}
       </Modal>
     </>
   );
@@ -133,7 +134,7 @@ function K({ label, value, hint, tone }: { label: string; value: string; hint?: 
   );
 }
 
-function StaffForm({ s, onDone }: { s: S | null; onDone: () => void }) {
+function StaffForm({ s, branches, onDone }: { s: S | null; branches: { id: number; name: string }[]; onDone: () => void }) {
   const [role, setRole] = useState<Role>(s?.role ?? 'oqituvchi');
   return (
     <ActionForm action={saveStaff.bind(null, s?.id ?? null)} onDone={onDone} onCancel={onDone}>
@@ -168,6 +169,18 @@ function StaffForm({ s, onDone }: { s: S | null; onDone: () => void }) {
           <input name="password" type="text" autoComplete="new-password" className="field" required={!s} minLength={6} />
         </Field>
       </div>
+      {branches.length > 1 && role !== 'rahbar' && (
+        <Field label="Filial" hint="Xodim faqat shu filial ma'lumotlarini ko'radi">
+          <select name="branchId" defaultValue={s?.branchId ?? ''} className="field">
+            <option value="">Barcha filiallar</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
       <Field label="Bonus qoidasi" hint="Masalan: har bir yangi o'quvchi uchun 50 000 so'm">
         <input name="bonusRule" defaultValue={s?.bonusRule ?? ''} className="field" />
       </Field>

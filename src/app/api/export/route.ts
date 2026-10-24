@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { getCurrentUser } from '@/lib/auth';
 
-const TABLES = ['settings', 'users', 'courses', 'groups', 'students', 'enrollments', 'lessons', 'attendance', 'payments', 'transactions', 'reconciliations', 'leads', 'notes', 'grades', 'results', 'graduates', 'tasks', 'staff_reports'];
+const TABLES = ['settings', 'branches', 'users', 'courses', 'groups', 'students', 'enrollments', 'lessons', 'attendance', 'payments', 'transactions', 'reconciliations', 'leads', 'notes', 'grades', 'results', 'graduates', 'tasks', 'staff_reports', 'online_courses', 'course_modules', 'course_lessons', 'learners', 'promo_codes', 'course_orders', 'lesson_progress'];
 
 export const dynamic = 'force-dynamic';
 

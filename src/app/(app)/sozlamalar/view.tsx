@@ -3,6 +3,12 @@ import { Download, Database, ShieldCheck } from 'lucide-react';
 import { Card, CardHeader, Field } from '@/components/ui';
 import { ActionForm } from '@/components/action-form';
 import { saveSettings, changeMyPassword } from '@/app/actions/staff';
+import { saveBranch, toggleBranch } from '@/app/actions/branch';
+import { useState } from 'react';
+import { Building2, Pencil, Plus, Power } from 'lucide-react';
+import { Badge, Button } from '@/components/ui';
+import { Modal } from '@/components/modal';
+import { ActionButton } from '@/components/action-form';
 import { PageHeader, buttonClass } from '@/components/ui';
 import { num } from '@/lib/format';
 
@@ -13,13 +19,19 @@ const CSV = [
   { t: 'transactions', l: 'Kirim-chiqim' },
   { t: 'attendance', l: 'Davomat' },
   { t: 'leads', l: 'Lidlar' },
+  { t: 'course_orders', l: 'Onlayn sotuvlar' },
+  { t: 'learners', l: "Onlayn o'quvchilar" },
 ];
 
-export function SettingsView({ s, counts }: { s: { centerName: string; phone: string | null; address: string | null; paymentDueDay: number; salaryDay: number; reservePercent: number }; counts: Record<string, number> }) {
+type Br = { id: number; name: string; address: string | null; phone: string | null; active: boolean; students: number; groups: number };
+
+export function SettingsView({ s, counts, branches }: { branches: Br[]; s: { centerName: string; phone: string | null; address: string | null; paymentDueDay: number; salaryDay: number; reservePercent: number }; counts: Record<string, number> }) {
   return (
     <>
       <PageHeader title="Sozlamalar" sub="Markaz ma'lumotlari, to'lov qoidalari va ma'lumotlar zaxirasi" />
       <div className="grid gap-5 lg:grid-cols-2">
+        <div className="space-y-5">
+        <BranchesCard branches={branches} />
         <Card>
           <CardHeader title="Markaz va qoidalar" />
           <div className="px-5 pb-5">
@@ -49,6 +61,7 @@ export function SettingsView({ s, counts }: { s: { centerName: string; phone: st
             </ActionForm>
           </div>
         </Card>
+        </div>
         <div className="space-y-5">
           <Card>
             <CardHeader title="Ma'lumotlar sizniki" sub="Barcha yozuvlar o'zingizning Postgres bazangizda saqlanadi" />
@@ -95,5 +108,61 @@ export function SettingsView({ s, counts }: { s: { centerName: string; phone: st
         </div>
       </div>
     </>
+  );
+}
+
+function BranchesCard({ branches }: { branches: Br[] }) {
+  const [edit, setEdit] = useState<Br | 'new' | null>(null);
+  return (
+    <Card>
+      <CardHeader
+        title="Filiallar"
+        sub="Har bir filial o'z guruhlari, o'quvchilari va xarajatlari bilan alohida hisoblanadi"
+        action={
+          <Button size="sm" variant="secondary" onClick={() => setEdit('new')}>
+            <Plus className="h-4 w-4" /> Filial
+          </Button>
+        }
+      />
+      <ul className="divide-y divide-line border-t border-line">
+        {branches.map((b) => (
+          <li key={b.id} className="flex items-center gap-3 px-5 py-3">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand">
+              <Building2 className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 text-sm font-bold">
+                {b.name}
+                {!b.active && <Badge>Yopilgan</Badge>}
+              </div>
+              <div className="truncate text-xs text-fg-muted">
+                {b.groups} guruh, {b.students} o&apos;quvchi{b.address ? `, ${b.address}` : ''}
+              </div>
+            </div>
+            <Button size="icon" variant="ghost" onClick={() => setEdit(b)} aria-label="Tahrirlash">
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <ActionButton variant="ghost" size="icon" action={() => toggleBranch(b.id)} confirm={b.active ? 'Filial yopilsinmi? Ma\'lumotlari saqlanib qoladi.' : undefined} title={b.active ? 'Yopish' : 'Qayta ochish'}>
+              <Power className="h-4 w-4" />
+            </ActionButton>
+          </li>
+        ))}
+      </ul>
+      <Modal open={!!edit} onClose={() => setEdit(null)} title={edit === 'new' ? 'Yangi filial' : 'Filialni tahrirlash'} size="sm">
+        {edit && (
+          <ActionForm action={saveBranch.bind(null, edit === 'new' ? null : edit.id)} onDone={() => setEdit(null)} onCancel={() => setEdit(null)}>
+            <Field label="Nomi">
+              <input name="name" defaultValue={edit === 'new' ? '' : edit.name} className="field" placeholder="Masalan: Davlatobod filiali" required />
+            </Field>
+            <Field label="Manzil">
+              <input name="address" defaultValue={edit === 'new' ? '' : edit.address ?? ''} className="field" />
+            </Field>
+            <Field label="Telefon">
+              <input name="phone" defaultValue={edit === 'new' ? '' : edit.phone ?? ''} className="field" />
+            </Field>
+          </ActionForm>
+        )}
+      </Modal>
+    </Card>
   );
 }

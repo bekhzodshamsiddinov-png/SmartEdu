@@ -6,6 +6,7 @@ import { requireSection } from '@/lib/auth';
 import { getBalances } from '@/lib/finance';
 import { groupOptions, staffOptions } from '@/lib/options';
 import { GroupsView } from './view';
+import { allBranches, getBranchScope } from '@/lib/branch';
 
 export const metadata = { title: 'Guruhlar' };
 
@@ -14,6 +15,8 @@ export default async function GroupsPage({ searchParams }: { searchParams: Promi
   const user = await requireSection('groups');
   const support = alias(users, 'support');
   const mine = user.role === 'oqituvchi' || user.role === 'support';
+  const scope = await getBranchScope();
+  const branches = (await allBranches()).filter((b) => b.active);
   const [rows, counts, cs, teachers, gopts] = await Promise.all([
     db
       .select({
@@ -33,6 +36,7 @@ export default async function GroupsPage({ searchParams }: { searchParams: Promi
         capacity: groups.capacity,
         startDate: groups.startDate,
         active: groups.active,
+        branchId: groups.branchId,
       })
       .from(groups)
       .innerJoin(courses, eq(courses.id, groups.courseId))
@@ -47,11 +51,12 @@ export default async function GroupsPage({ searchParams }: { searchParams: Promi
       from courses c left join groups g on g.course_id = c.id left join enrollments e on e.group_id = g.id
       group by c.id order by c.id`),
     staffOptions(['oqituvchi', 'support', 'rahbar', 'admin']),
-    groupOptions(),
+    groupOptions(scope.id),
   ]);
   const countMap = new Map(counts.map((c) => [c.group_id, c.c]));
   let list = rows.map((r) => ({ ...r, students: countMap.get(r.id) ?? 0 }));
   if (mine) list = list.filter((g) => g.teacherId === user.id || g.supportId === user.id);
+  if (scope.id) list = list.filter((g) => g.branchId === scope.id);
 
   const gid = Number(sp.id);
   let detail = null;
@@ -86,6 +91,8 @@ export default async function GroupsPage({ searchParams }: { searchParams: Promi
       groupOpts={gopts}
       detail={detail}
       role={user.role}
+      branches={branches.map((b) => ({ id: b.id, name: b.name }))}
+      currentBranch={scope.id}
       tab={sp.tab === 'yonalishlar' ? 'yonalishlar' : 'guruhlar'}
     />
   );
