@@ -75,6 +75,12 @@ export const users = pgTable('users', {
   bonusRule: text('bonus_rule'),
   active: boolean('active').notNull().default(true),
   sessionVersion: integer('session_version').notNull().default(0),
+  /** Ikki bosqichli kirish (TOTP) — sir shifrlangan holda saqlanadi */
+  totpSecret: text('totp_secret'),
+  totpEnabled: boolean('totp_enabled').notNull().default(false),
+  totpLastStep: integer('totp_last_step').notNull().default(0),
+  /** Zaxira kodlar (sha256 xeshlar, JSON massiv) */
+  totpBackup: text('totp_backup'),
   hiredAt: date('hired_at'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

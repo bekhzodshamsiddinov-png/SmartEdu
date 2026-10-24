@@ -1,18 +1,18 @@
 'use client';
 import { useState } from 'react';
-import { Plus, Pencil, Phone, UserX, UserCheck, BriefcaseBusiness } from 'lucide-react';
+import { Plus, Pencil, Phone, UserX, UserCheck, BriefcaseBusiness, ShieldOff, ShieldCheck } from 'lucide-react';
 import type { Role } from '@/db/schema';
 import { Avatar, Badge, Button, Card, Empty, Field, PageHeader, cn } from '@/components/ui';
 import { Modal } from '@/components/modal';
 import { ActionButton, ActionForm } from '@/components/action-form';
 import { MoneyInput } from '@/components/money-input';
-import { saveStaff, toggleStaff } from '@/app/actions/staff';
+import { reset2fa, saveStaff, toggleStaff } from '@/app/actions/staff';
 import { ROLE_LABELS } from '@/lib/roles';
 import { money, phone, pct } from '@/lib/format';
 import { fmtMonth, fmtShort } from '@/lib/dates';
 
 type S = {
-  id: number; branchId: number | null; fullName: string; phone: string; role: Role; position: string | null; baseSalary: number; bonusRule: string | null; active: boolean; hiredAt: string | null;
+  id: number; branchId: number | null; fullName: string; phone: string; role: Role; position: string | null; baseSalary: number; bonusRule: string | null; active: boolean; hiredAt: string | null; twoFactor: boolean;
   teach: { groups: number; students: number; lessons: number; late: number; missed: number; att_total: number; att_present: number } | null;
   admin: { received: number; calls: number; parent: number } | null;
   sales: { leads: number; paid: number; calls: number } | null;
@@ -58,6 +58,7 @@ export function StaffView({ staff, meId, month, branches }: { staff: S[]; meId: 
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="truncate font-extrabold">{s.fullName}</span>
+                    {s.twoFactor && <ShieldCheck className="h-4 w-4 shrink-0 text-good" aria-label="Ikki bosqichli kirish yoqilgan" />}
                     <Badge tone={s.role === 'rahbar' ? 'brand' : 'neutral'}>{ROLE_LABELS[s.role]}</Badge>
                     {!s.active && <Badge tone="bad">Faol emas</Badge>}
                   </div>
@@ -74,6 +75,11 @@ export function StaffView({ staff, meId, month, branches }: { staff: S[]; meId: 
                   <Button size="icon" variant="ghost" onClick={() => setEdit(s)} aria-label="Tahrirlash">
                     <Pencil className="h-4 w-4" />
                   </Button>
+                  {s.id !== meId && s.twoFactor && (
+                    <ActionButton variant="ghost" size="icon" action={() => reset2fa(s.id)} confirm={`${s.fullName}: telefoni yo'qolganmi? Ikki bosqichli kirish o'chiriladi, xodim qayta yoqadi.`} title="2FA ni bekor qilish (telefon yo'qolsa)">
+                      <ShieldOff className="h-4 w-4" />
+                    </ActionButton>
+                  )}
                   {s.id !== meId && (
                     <ActionButton variant="ghost" size="icon" action={() => toggleStaff(s.id)} confirm={s.active ? 'Xodim tizimga kira olmaydigan bo\'ladi. Davom etasizmi?' : undefined} title={s.active ? 'Faolsizlantirish' : 'Faollashtirish'}>
                       {s.active ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}

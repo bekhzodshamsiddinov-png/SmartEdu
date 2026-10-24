@@ -15,7 +15,7 @@ export default async function StaffPage() {
   const to = monthEnd(m);
   const t = today();
   const [list, teach, admin, sales, tasks, reports] = await Promise.all([
-    db.select({ id: users.id, branchId: users.branchId, fullName: users.fullName, phone: users.phone, role: users.role, position: users.position, baseSalary: users.baseSalary, bonusRule: users.bonusRule, active: users.active, hiredAt: users.hiredAt }).from(users).orderBy(asc(users.active), asc(users.fullName)),
+    db.select({ id: users.id, branchId: users.branchId, fullName: users.fullName, phone: users.phone, role: users.role, position: users.position, baseSalary: users.baseSalary, bonusRule: users.bonusRule, active: users.active, hiredAt: users.hiredAt, twoFactor: users.totpEnabled }).from(users).orderBy(asc(users.active), asc(users.fullName)),
     db.execute<{ uid: number; groups: number; students: number; lessons: number; late: number; missed: number; att_total: number; att_present: number }>(sql`
       select u.id uid,
         (select count(*) from groups g where g.active and (g.teacher_id = u.id or g.support_id = u.id))::int groups,

@@ -66,12 +66,14 @@ export function Shell({
 
   const userBox = (
     <div className="border-t border-white/[0.08] p-3">
-      <div className="flex items-center gap-3 rounded-[10px] px-2 py-2">
-        <Avatar name={user.fullName} size={34} color="#0E7C6B" />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-bold text-white">{user.fullName}</div>
-          <div className="truncate text-xs text-white/55">{user.roleLabel}</div>
-        </div>
+      <div className="flex items-center gap-1 rounded-[10px] px-2 py-2">
+        <Link href="/hisobim" title="Mening hisobim: parol va xavfsizlik" className="-ml-1 flex min-w-0 flex-1 items-center gap-3 rounded-lg px-1 py-1 hover:bg-white/[0.06]">
+          <Avatar name={user.fullName} size={34} color="#0E7C6B" />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[13px] font-bold text-white">{user.fullName}</div>
+            <div className="truncate text-xs text-white/55">{user.roleLabel}</div>
+          </div>
+        </Link>
         <form action={logout}>
           <button className="grid h-8 w-8 place-items-center rounded-lg text-white/55 hover:bg-white/10 hover:text-white" title="Chiqish" aria-label="Chiqish">
             <LogOut className="h-4 w-4" />

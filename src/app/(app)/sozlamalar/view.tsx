@@ -2,7 +2,7 @@
 import { Download, Database, ShieldCheck } from 'lucide-react';
 import { Card, CardHeader, Field } from '@/components/ui';
 import { ActionForm } from '@/components/action-form';
-import { saveSettings, changeMyPassword, saveAcademySettings, logoutEverywhere } from '@/app/actions/staff';
+import { saveSettings, saveAcademySettings, logoutEverywhere } from '@/app/actions/staff';
 import { saveBranch, toggleBranch } from '@/app/actions/branch';
 import { useEffect, useState } from 'react';
 import { Building2, Pencil, Plus, Power } from 'lucide-react';
@@ -93,21 +93,11 @@ export function SettingsView({ s, counts, branches, academy, integrations, audit
             </div>
           </Card>
           <Card>
-            <CardHeader title="Parolni o'zgartirish" />
+            <CardHeader title="Parol va ikki bosqichli kirish" sub="Shaxsiy xavfsizlik sozlamalari endi alohida sahifada" />
             <div className="px-5 pb-5">
-              <ActionForm action={changeMyPassword} submitLabel="Parolni yangilash" resetOnSuccess>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Joriy parol">
-                    <input type="password" name="current" autoComplete="current-password" className="field" required />
-                  </Field>
-                  <Field label="Yangi parol">
-                    <input type="password" name="next" autoComplete="new-password" minLength={8} className="field" required />
-                  </Field>
-                </div>
-              </ActionForm>
-              <p className="mt-3 flex items-center gap-1.5 text-xs text-fg-muted">
-                <ShieldCheck className="h-3.5 w-3.5" /> Kamida 8 belgi, harf va raqam aralash. Parol almashsa, boshqa qurilmalardan avtomatik chiqiladi.
-              </p>
+              <a href="/hisobim" className={buttonClass('secondary', 'md', 'w-full')}>
+                <ShieldCheck className="h-4 w-4" /> Mening hisobim
+              </a>
             </div>
           </Card>
           <SecurityCard rows={auditRows} />
@@ -179,6 +169,12 @@ const ACTION_TONE: Record<string, 'bad' | 'warn' | 'neutral'> = {
   "To'lov kartasi o'zgartirildi": 'bad',
   'Payme: ruxsatsiz so\'rov': 'bad',
   'Click: imzo xato': 'bad',
+  "To'lov o'chirildi": 'bad',
+  "Moliya yozuvi o'chirildi": 'bad',
+  'Moliya yozuvi tahrirlandi': 'warn',
+  'Xato 2FA kodi': 'warn',
+  "2FA o'chirildi": 'bad',
+  '2FA bekor qilindi': 'warn',
 };
 
 function SecurityCard({ rows }: { rows: AuditRow[] }) {

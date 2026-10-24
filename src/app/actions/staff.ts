@@ -10,6 +10,7 @@ import { ROLE_LABELS } from '@/lib/roles';
 import { notifyTelegram } from '@/lib/payments';
 import { LOCK_MESSAGE, audit, clearHits, hashPassword, overLimit, passwordProblem, verifyPassword } from '@/lib/security';
 import { SESSION_COOKIE, sessionCookieOptions, signSession } from '@/lib/session';
+import { hashBackup, newBackupCodes, newSecret, openSecret, otpauthUrl, sealSecret, verifyTotp } from '@/lib/totp';
 
 export async function saveStaff(id: number | null, fd: FormData) {
   return run(async () => {
@@ -157,5 +158,75 @@ export async function saveAcademySettings(fd: FormData) {
       await notifyTelegram(`⚠️ Akademiya to'lov kartasi o'zgartirildi: ${mask(cur?.payCard)} → ${mask(v.payCard)}\nKim: ${me.fullName}`);
     }
     return { message: 'Akademiya sozlamalari saqlandi' };
+  });
+}
+
+/* ---------- Ikki bosqichli kirish (2FA) ---------- */
+
+/** 1-qadam: yangi sir yaratib, QR kodni qaytaradi (hali yoqilmaydi) */
+export async function start2fa() {
+  const me = await getCurrentUser();
+  if (!me) return { ok: false as const, error: 'Tizimga qayta kiring.' };
+  const [u] = await db.select({ enabled: users.totpEnabled }).from(users).where(eq(users.id, me.id));
+  if (u?.enabled) return { ok: false as const, error: 'Ikki bosqichli kirish allaqachon yoqilgan.' };
+  const secret = newSecret();
+  await db.update(users).set({ totpSecret: sealSecret(secret), totpLastStep: 0 }).where(eq(users.id, me.id));
+  const QR = (await import('qrcode')).default;
+  const svg = await QR.toString(otpauthUrl(secret, `+${me.phone}`), { type: 'svg', margin: 1, errorCorrectionLevel: 'M' });
+  return { ok: true as const, secret: secret.replace(/(.{4})/g, '$1 ').trim(), qr: 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64') };
+}
+
+/** 2-qadam: ilovadagi kod to'g'ri bo'lsa yoqiladi va zaxira kodlar beriladi (faqat bir marta ko'rsatiladi) */
+export async function confirm2fa(code: string) {
+  const me = await getCurrentUser();
+  if (!me) return { ok: false as const, error: 'Tizimga qayta kiring.' };
+  if (await overLimit('2fa-setup', `u:${me.id}`, 10, 15)) return { ok: false as const, error: LOCK_MESSAGE };
+  const [u] = await db.select().from(users).where(eq(users.id, me.id));
+  if (!u?.totpSecret || u.totpEnabled) return { ok: false as const, error: 'Avval QR kodni qayta oling.' };
+  const step = verifyTotp(openSecret(u.totpSecret), String(code), 0);
+  if (step === null) return { ok: false as const, error: "Kod noto'g'ri. Ilovadagi eng yangi kodni kiriting." };
+  const backup = newBackupCodes();
+  await db
+    .update(users)
+    .set({ totpEnabled: true, totpLastStep: step, totpBackup: JSON.stringify(backup.map(hashBackup)), sessionVersion: sql`${users.sessionVersion} + 1` })
+    .where(eq(users.id, me.id));
+  const [r] = await db.select({ v: users.sessionVersion }).from(users).where(eq(users.id, me.id));
+  // Boshqa qurilmalardagi eski sessiyalar yopiladi — endi har kirishda kod so'raladi
+  (await cookies()).set(SESSION_COOKIE, await signSession({ uid: me.id, role: me.role, v: r.v }), sessionCookieOptions);
+  await audit({ actorType: 'xodim', actorId: me.id, actorName: me.fullName, action: '2FA yoqildi' });
+  return { ok: true as const, backup };
+}
+
+/** O'chirish: parol + ilovadagi kod kerak */
+export async function disable2fa(fd: FormData) {
+  return run(async () => {
+    const me = await getCurrentUser();
+    if (!me) throw new Error('Tizimga qayta kiring.');
+    if (await overLimit('staff-pw', `u:${me.id}`, 5, 15)) throw new Error(LOCK_MESSAGE);
+    const [u] = await db.select().from(users).where(eq(users.id, me.id));
+    if (!u?.totpEnabled || !u.totpSecret) throw new Error("Ikki bosqichli kirish yoqilmagan.");
+    if (!(await verifyPassword(str(fd, 'password') ?? '', u.passwordHash))) throw new Error("Parol noto'g'ri.");
+    if (verifyTotp(openSecret(u.totpSecret), str(fd, 'code') ?? '', u.totpLastStep) === null) throw new Error("Kod noto'g'ri.");
+    await db.update(users).set({ totpEnabled: false, totpSecret: null, totpBackup: null, totpLastStep: 0 }).where(eq(users.id, me.id));
+    await clearHits('staff-pw', `u:${me.id}`);
+    await audit({ actorType: 'xodim', actorId: me.id, actorName: me.fullName, action: "2FA o'chirildi" });
+    await notifyTelegram(`⚠️ SmartEdu: ${me.fullName} ikki bosqichli kirishni o'chirdi.`);
+    return { message: "Ikki bosqichli kirish o'chirildi" };
+  });
+}
+
+/** Rahbar: telefonini yo'qotgan xodimning 2FA sini o'chirib beradi */
+export async function reset2fa(id: number) {
+  return run(async () => {
+    const me = await assertSection('staff');
+    if (me.id === id) throw new Error("O'zingiznikini \"Mening hisobim\" sahifasida o'chiring.");
+    const [u] = await db.select({ fullName: users.fullName }).from(users).where(eq(users.id, id));
+    if (!u) throw new Error('Xodim topilmadi.');
+    await db
+      .update(users)
+      .set({ totpEnabled: false, totpSecret: null, totpBackup: null, totpLastStep: 0, sessionVersion: sql`${users.sessionVersion} + 1` })
+      .where(eq(users.id, id));
+    await audit({ actorType: 'xodim', actorId: me.id, actorName: me.fullName, action: '2FA bekor qilindi', detail: u.fullName });
+    return { message: `${u.fullName}: ikki bosqichli kirish o'chirildi` };
   });
 }

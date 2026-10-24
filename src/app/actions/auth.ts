@@ -4,13 +4,37 @@ import { redirect } from 'next/navigation';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { users, settings, courses } from '@/db/schema';
-import { SESSION_COOKIE, sessionCookieOptions, signSession } from '@/lib/session';
+import { SignJWT, jwtVerify } from 'jose';
+import { SESSION_COOKIE, authSecret, sessionCookieOptions, signSession } from '@/lib/session';
+import { hashBackup, openSecret, verifyTotp } from '@/lib/totp';
 import { normalizePhone } from '@/lib/format';
 import { today } from '@/lib/dates';
 import { notifyTelegram } from '@/lib/payments';
-import { LOCK_MESSAGE, audit, clientIp, guardLogin, hashPassword, overLimit, passwordProblem, safeEqual, verifyPassword } from '@/lib/security';
+import { LOCK_MESSAGE, audit, clearHits, clientIp, guardLogin, hashPassword, overLimit, passwordProblem, safeEqual, verifyPassword } from '@/lib/security';
 
-export type AuthState = { error?: string } | undefined;
+export type AuthState = { error?: string; step?: 'code' } | undefined;
+
+const PENDING_COOKIE = 'smartedu_2fa';
+const pendingKey = () => new TextEncoder().encode(authSecret() + ':2fa-pending');
+
+/** Yangi joydan kirilsa rahbarga xabar (oxirgi 60 kunda bu IP dan kirilmagan bo'lsa) */
+async function newDeviceAlert(u: { id: number; fullName: string; role: string }, ip: string) {
+  const [seen] = await db.execute<{ c: number }>(sql`
+    select count(*)::int c from audit_log where actor_type = 'xodim' and actor_id = ${u.id} and action = 'Tizimga kirdi' and ip = ${ip}
+      and created_at > now() - interval '60 days'`);
+  if (!seen.c) {
+    const [any] = await db.execute<{ c: number }>(sql`select count(*)::int c from audit_log where actor_id = ${u.id} and action = 'Tizimga kirdi'`);
+    if (any.c) await notifyTelegram(`🔐 SmartEdu: ${u.fullName} (${u.role}) yangi joydan tizimga kirdi.\nIP: ${ip}\nAgar bu siz bo'lmasangiz — parolni darhol almashtiring.`);
+  }
+}
+
+async function finishLogin(u: { id: number; fullName: string; role: string; sessionVersion: number }, ip: string, via: string) {
+  await newDeviceAlert(u, ip);
+  await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: 'Tizimga kirdi', detail: via || null, ip });
+  const token = await signSession({ uid: u.id, role: u.role, v: u.sessionVersion });
+  (await cookies()).set(SESSION_COOKIE, token, sessionCookieOptions);
+  redirect(u.role === 'admin' ? '/ish-stoli' : '/');
+}
 
 export async function login(_: AuthState, fd: FormData): Promise<AuthState> {
   const phone = normalizePhone(String(fd.get('phone') || ''));
@@ -32,10 +56,57 @@ export async function login(_: AuthState, fd: FormData): Promise<AuthState> {
   }
   if (!u.active) return { error: "Hisobingiz o'chirilgan. Rahbarga murojaat qiling." };
   await g.success();
-  await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: 'Tizimga kirdi', ip });
-  const token = await signSession({ uid: u.id, role: u.role, v: u.sessionVersion });
-  (await cookies()).set(SESSION_COOKIE, token, sessionCookieOptions);
-  redirect(u.role === 'admin' ? '/ish-stoli' : '/');
+  if (u.totpEnabled) {
+    // Parol to'g'ri — endi telefondagi kod so'raladi (5 daqiqa ichida)
+    const t = await new SignJWT({ uid: u.id, v: u.sessionVersion }).setProtectedHeader({ alg: 'HS256' }).setIssuedAt().setExpirationTime('5m').sign(pendingKey());
+    (await cookies()).set(PENDING_COOKIE, t, { ...sessionCookieOptions, maxAge: 300 });
+    return { step: 'code' };
+  }
+  await finishLogin(u, ip, '');
+  return undefined;
+}
+
+/** 2-bosqich: Authenticator ilovasidagi 6 xonali kod yoki zaxira kod */
+export async function verifyLoginCode(_: AuthState, fd: FormData): Promise<AuthState> {
+  const store = await cookies();
+  let uid = 0;
+  let v = -1;
+  try {
+    const { payload } = await jwtVerify(store.get(PENDING_COOKIE)?.value ?? '', pendingKey(), { algorithms: ['HS256'] });
+    uid = Number(payload.uid);
+    v = Number(payload.v);
+  } catch {
+    return { error: 'Vaqt tugadi. Telefon raqam va parolni qayta kiriting.' };
+  }
+  const ip = await clientIp();
+  if (await overLimit('2fa', `u:${uid}`, 5, 15)) return { step: 'code', error: LOCK_MESSAGE };
+  const [u] = await db.select().from(users).where(eq(users.id, uid));
+  if (!u || !u.active || u.sessionVersion !== v || !u.totpEnabled || !u.totpSecret) return { error: 'Qaytadan kiring.' };
+  const code = String(fd.get('code') || '').trim();
+  let via = '';
+  const step = verifyTotp(openSecret(u.totpSecret), code, u.totpLastStep);
+  if (step !== null) {
+    // Atomar: shu kod parallel ikkinchi marta ishlatilmasin
+    const ok = await db.execute<{ id: number }>(sql`update users set totp_last_step = ${step} where id = ${u.id} and totp_last_step < ${step} returning id`);
+    if (!ok.length) return { step: 'code', error: "Kod noto'g'ri yoki eskirgan." };
+    via = 'Ikki bosqichli';
+  } else {
+    const h = hashBackup(code);
+    const list: string[] = JSON.parse(u.totpBackup || '[]');
+    if (!/^[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}$/.test(code) || !list.includes(h)) {
+      await audit({ actorType: 'tizim', action: 'Xato 2FA kodi', detail: u.fullName, ip });
+      return { step: 'code', error: "Kod noto'g'ri. Telefoningizdagi ilovadan yangi kodni kiriting." };
+    }
+    const rest = list.filter((x) => x !== h);
+    const ok = await db.execute<{ id: number }>(sql`update users set totp_backup = ${JSON.stringify(rest)} where id = ${u.id} and totp_backup = ${u.totpBackup} returning id`);
+    if (!ok.length) return { step: 'code', error: 'Qayta urinib ko\'ring.' };
+    via = `Zaxira kod bilan (${rest.length} ta qoldi)`;
+    await notifyTelegram(`⚠️ SmartEdu: ${u.fullName} zaxira kod bilan kirdi. ${rest.length} ta kod qoldi.`);
+  }
+  store.delete({ name: PENDING_COOKIE, path: '/' });
+  await clearHits('2fa', `u:${uid}`);
+  await finishLogin(u, ip, via);
+  return undefined;
 }
 
 export async function logout() {
@@ -89,6 +160,7 @@ export async function setup(_: AuthState, fd: FormData): Promise<AuthState> {
     ]);
   }
   await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: 'Tizim sozlandi', ip });
+  await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: 'Tizimga kirdi', detail: 'Birinchi sozlash', ip });
   const token = await signSession({ uid: u.id, role: u.role, v: u.sessionVersion });
   (await cookies()).set(SESSION_COOKIE, token, sessionCookieOptions);
   redirect('/');
