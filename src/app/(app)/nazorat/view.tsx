@@ -53,7 +53,7 @@ export function ControlView({ date, todayStr, days, staff }: { date: string; tod
         }
       />
 
-      <div className="mb-5 grid grid-cols-3 gap-3">
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Summary label="Jamoa bajarilishi" value={avg} />
         <Summary label="7 kunlik o'rtacha" value={weekAvg} />
         <div className="card px-5 py-4">

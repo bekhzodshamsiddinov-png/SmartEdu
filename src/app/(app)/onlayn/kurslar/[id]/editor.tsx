@@ -94,7 +94,7 @@ export function CourseEditor({
         )}
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
+      <div className="grid gap-6 xl:grid-cols-[1fr_340px] [&>*]:min-w-0">
         <div className="space-y-4">
           <div className="flex items-end justify-between">
             <div>

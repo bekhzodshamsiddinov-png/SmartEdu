@@ -91,7 +91,7 @@ export function DeskView({
         </div>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
+      <div className="grid gap-6 xl:grid-cols-[1fr_380px] [&>*]:min-w-0">
         <div className="space-y-6">
           {/* Darslar */}
           <Card id="darslar" className="scroll-mt-24 overflow-hidden">

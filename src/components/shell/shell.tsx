@@ -104,6 +104,11 @@ export function Shell({
                 <X className="h-5 w-5" />
               </button>
             </div>
+            {branch.list.length > 1 && !branch.locked && (
+              <div className="px-4 pb-2 [&_select]:w-full [&_select]:max-w-none [&_label]:w-full">
+                <BranchSwitcher branches={branch.list} current={branch.current} locked={branch.locked} />
+              </div>
+            )}
             {nav}
             {userBox}
           </aside>
@@ -119,7 +124,9 @@ export function Shell({
           <div className="min-w-0 flex-1">
             <SearchBox />
           </div>
-          <BranchSwitcher branches={branch.list} current={branch.current} locked={branch.locked} />
+          <div className="hidden sm:block">
+            <BranchSwitcher branches={branch.list} current={branch.current} locked={branch.locked} />
+          </div>
           {quick.length > 0 && <QuickAddMenu quick={quick} />}
         </div>
       </header>
