@@ -21,7 +21,11 @@ export default async function SettingsPage() {
     click: !!(process.env.CLICK_SERVICE_ID && process.env.CLICK_MERCHANT_ID && process.env.CLICK_SECRET_KEY),
     payme: !!(process.env.PAYME_MERCHANT_ID && process.env.PAYME_KEY),
     telegram: !!(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID),
+    bunny: !!process.env.BUNNY_TOKEN_KEY,
   };
   const academy = { payCard: s.payCard, payCardHolder: s.payCardHolder, telegram: s.telegram, instagram: s.instagram, academyTagline: s.academyTagline };
-  return <SettingsView integrations={integrations} academy={academy} branches={[...branches]} s={{ centerName: s.centerName, phone: s.phone, address: s.address, paymentDueDay: s.paymentDueDay, salaryDay: s.salaryDay, reservePercent: s.reservePercent }} counts={c} />;
+  const auditRows = await db.execute<{ id: number; at: string; actorName: string | null; actorType: string; action: string; detail: string | null; ip: string | null }>(sql`
+    select id, to_char(created_at at time zone 'Asia/Tashkent', 'DD.MM HH24:MI') at, actor_name "actorName", actor_type "actorType", action, detail, ip
+    from audit_log order by id desc limit 80`);
+  return <SettingsView auditRows={[...auditRows]} integrations={integrations} academy={academy} branches={[...branches]} s={{ centerName: s.centerName, phone: s.phone, address: s.address, paymentDueDay: s.paymentDueDay, salaryDay: s.salaryDay, reservePercent: s.reservePercent }} counts={c} />;
 }

@@ -2,20 +2,22 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { and, eq, sql } from 'drizzle-orm';
-import bcrypt from 'bcryptjs';
 import { db } from '@/db';
 import { learners, courseOrders, onlineCourses, promoCodes, courseLessons, lessonProgress } from '@/db/schema';
 import { LEARNER_COOKIE, getLearner, setLearnerCookie } from '@/lib/learner';
 import { hasAccess } from '@/lib/academy';
+import { expireStaleOrders, releaseOrderPromo, reservePromo } from '@/lib/promo';
 import { notifyTelegram } from '@/lib/payments';
 import { normalizePhone, money } from '@/lib/format';
 import { addDays, today } from '@/lib/dates';
+import { LOCK_MESSAGE, clearHits, clientIp, guardLogin, hashPassword, overLimit, passwordProblem, verifyPassword } from '@/lib/security';
 
 export type FormState = { error?: string } | undefined;
 
+/** Faqat o'z saytimiz ichidagi manzilga qaytaramiz (open redirect yo'q) */
 function safeNext(n: FormDataEntryValue | null) {
   const s = typeof n === 'string' ? n : '';
-  return s.startsWith('/akademiya') ? s : '/akademiya/kabinet';
+  return /^\/akademiya(\/[A-Za-z0-9\-_/]*)?(\?[A-Za-z0-9\-_=&%]*)?$/.test(s) && !s.includes('//') ? s : '/akademiya/kabinet';
 }
 
 export async function registerLearner(_: FormState, fd: FormData): Promise<FormState> {
@@ -24,36 +26,45 @@ export async function registerLearner(_: FormState, fd: FormData): Promise<FormS
   const password = String(fd.get('password') || '');
   if (fullName.length < 3) return { error: "Ism-familiyangizni to'liq yozing." };
   if (phone.length !== 12) return { error: "Telefon raqamni to'liq kiriting, masalan 90 123 45 67." };
-  if (password.length < 6) return { error: "Parol kamida 6 belgidan iborat bo'lsin." };
+  if (fullName.length > 80) return { error: 'Ism juda uzun.' };
+  const pwErr = passwordProblem(password, phone);
+  if (pwErr) return { error: pwErr };
+  const ip = await clientIp();
+  // Bitta IP dan soatiga 5 tadan ortiq ro'yxat — bot hujumi
+  if (await overLimit('register', ip, 5, 60)) return { error: LOCK_MESSAGE };
   const [ex] = await db.select().from(learners).where(eq(learners.phone, phone));
-  const hash = await bcrypt.hash(password, 10);
+  const hash = await hashPassword(password);
   let id: number;
+  const v = 0;
   if (ex) {
+    // Mavjud raqamni boshqa odam "egallab" ololmasligi uchun: parolni faqat administrator beradi
     if (ex.passwordHash) return { error: "Bu raqam ro'yxatdan o'tgan. \"Kirish\" bo'limidan foydalaning." };
-    const [paid] = await db.select({ c: sql<number>`count(*)::int` }).from(courseOrders).where(and(eq(courseOrders.learnerId, ex.id), eq(courseOrders.status, 'tolandi')));
-    if (paid.c > 0) return { error: "Bu raqamga kurs rasmiylashtirilgan. Parolni administratordan oling." };
-    await db.update(learners).set({ fullName, passwordHash: hash, lastLoginAt: new Date() }).where(eq(learners.id, ex.id));
-    id = ex.id;
+    return { error: "Bu raqam bizda allaqachon bor. Parolni administratordan oling (Telegram orqali yozing)." };
   } else {
     const [l] = await db.insert(learners).values({ fullName, phone, passwordHash: hash, source: 'Sayt', lastLoginAt: new Date() }).returning({ id: learners.id });
     id = l.id;
   }
-  await setLearnerCookie(id);
+  await setLearnerCookie(id, v);
   redirect(safeNext(fd.get('next')));
 }
 
 export async function loginLearner(_: FormState, fd: FormData): Promise<FormState> {
   const phone = normalizePhone(String(fd.get('phone') || ''));
   const password = String(fd.get('password') || '');
+  if (!phone || !password || password.length > 128) return { error: "Telefon raqam yoki parol noto'g'ri." };
+  const ip = await clientIp();
+  const g = await guardLogin('learner', phone, ip);
+  if (g.blocked) return { error: LOCK_MESSAGE };
   const [l] = await db.select().from(learners).where(eq(learners.phone, phone));
-  if (!l || !l.passwordHash || !(await bcrypt.compare(password, l.passwordHash))) return { error: "Telefon raqam yoki parol noto'g'ri." };
+  if (!(await verifyPassword(password, l?.passwordHash)) || !l) return { error: "Telefon raqam yoki parol noto'g'ri." };
+  await g.success();
   await db.update(learners).set({ lastLoginAt: new Date() }).where(eq(learners.id, l.id));
-  await setLearnerCookie(l.id);
+  await setLearnerCookie(l.id, l.sessionVersion);
   redirect(safeNext(fd.get('next')));
 }
 
 export async function logoutLearner() {
-  (await cookies()).delete(LEARNER_COOKIE);
+  (await cookies()).delete({ name: LEARNER_COOKIE, path: '/' });
   redirect('/akademiya');
 }
 
@@ -71,6 +82,10 @@ async function quote(courseId: number, code: string | null) {
 export async function checkPromo(courseId: number, code: string) {
   const l = await getLearner();
   if (!l) return { ok: false as const, error: 'Avval tizimga kiring.' };
+  // Promokodlarni terib topishga yo'l qo'ymaymiz: 10 daqiqada 10 ta xato
+  if (await overLimit('promo', `l:${l.id}`, 20, 10)) return { ok: false as const, error: LOCK_MESSAGE };
+  await expireStaleOrders();
+  if (typeof code !== 'string' || code.length > 40 || !Number.isInteger(courseId)) return { ok: false as const, error: 'Promokod yaroqsiz.' };
   try {
     const q = await quote(courseId, code);
     return { ok: true as const, price: q.price, original: q.course.price };
@@ -86,36 +101,68 @@ export async function buyCourse(_: FormState, fd: FormData): Promise<FormState> 
   if (!c) return { error: 'Kurs topilmadi.' };
   if (!l) redirect(`/akademiya/kirish?next=${encodeURIComponent(`/akademiya/kurs/${c.slug}`)}`);
   if (await hasAccess(l.id, courseId)) redirect(`/akademiya/oqish/${c.slug}`);
+  const promoIn = String(fd.get('promo') || '').trim().slice(0, 40) || null;
+  if (promoIn && (await overLimit('promo', `l:${l.id}`, 20, 10))) return { error: LOCK_MESSAGE };
+  // Bitta o'quvchi soatiga 20 tadan ortiq buyurtma urinishi qila olmaydi
+  if (await overLimit('order', `l:${l.id}`, 20, 60)) return { error: LOCK_MESSAGE };
+  // Eskirgan band qilingan promokodlar avval bo'shatiladi
+  await expireStaleOrders();
   let q;
   try {
-    q = await quote(courseId, String(fd.get('promo') || '').trim() || null);
+    q = await quote(courseId, promoIn);
   } catch (e) {
     return { error: (e as Error).message };
   }
-  if (q.price === 0) {
-    const d = today();
-    await db.insert(courseOrders).values({ learnerId: l.id, courseId, amount: 0, originalPrice: q.course.price, promoCode: q.promo, method: 'bepul', status: 'tolandi', paidAt: d, accessUntil: q.course.accessDays ? addDays(d, q.course.accessDays) : null, provider: 'sayt' });
-    if (q.promo) await db.execute(sql`update promo_codes set used = used + 1 where code = ${q.promo}`);
-    redirect(`/akademiya/oqish/${c.slug}`);
-  }
-  // Ochiq (kutilayotgan) buyurtma bo'lsa, o'shani yangilaymiz
-  const [open] = await db
-    .select()
-    .from(courseOrders)
-    .where(and(eq(courseOrders.learnerId, l.id), eq(courseOrders.courseId, courseId), eq(courseOrders.status, 'kutilmoqda')));
-  let orderId: number;
-  if (open) {
-    const [busy] = await db.execute<{ c: number }>(sql`select count(*)::int c from payme_transactions where order_id = ${open.id} and state = 1`);
-    if (!busy.c) await db.update(courseOrders).set({ amount: q.price, originalPrice: q.course.price, promoCode: q.promo }).where(eq(courseOrders.id, open.id));
-    orderId = open.id;
-  } else {
-    const [o] = await db
+  type Out = { kind: 'free' } | { kind: 'order'; id: number; created: boolean } | { kind: 'error'; error: string };
+  const LIMIT = 'Promokod limiti tugagan.';
+  const course = q.course;
+  const promo = q.promo;
+  const price = q.price;
+  // Hammasi bitta tranzaksiyada: promokod band qilinib, buyurtma yozilmay qolsa — avtomatik bekor bo'ladi.
+  // Bitta o'quvchining shu kursga parallel so'rovlari navbatga qo'yiladi (promokod ikki marta band bo'lmaydi).
+  const out: Out = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(${l.id}, ${courseId})`);
+    const [paid] = await tx.execute<{ c: number }>(sql`
+      select count(*)::int c from course_orders where learner_id = ${l.id} and course_id = ${courseId} and status = 'tolandi'
+        and (access_until is null or access_until >= ${today()})`);
+    if (paid.c) return { kind: 'free' };
+    if (price === 0) {
+      if (promo && !(await reservePromo(promo, courseId, tx))) return { kind: 'error', error: LIMIT };
+      const d = today();
+      await tx.insert(courseOrders).values({ learnerId: l.id, courseId, amount: 0, originalPrice: course.price, promoCode: promo, promoReserved: !!promo, method: 'bepul', status: 'tolandi', paidAt: d, accessUntil: course.accessDays ? addDays(d, course.accessDays) : null, provider: 'sayt' });
+      return { kind: 'free' };
+    }
+    // Ochiq (kutilayotgan) buyurtma bo'lsa, o'shani yangilaymiz
+    const [open] = await tx
+      .select()
+      .from(courseOrders)
+      .where(and(eq(courseOrders.learnerId, l.id), eq(courseOrders.courseId, courseId), eq(courseOrders.status, 'kutilmoqda')));
+    if (open) {
+      const [busy] = await tx.execute<{ c: number }>(sql`select count(*)::int c from payme_transactions where order_id = ${open.id} and state = 1`);
+      const samePromo = (open.promoCode ?? null) === promo;
+      if (!busy.c && !(samePromo && open.amount === price)) {
+        if (!samePromo) {
+          if (promo && !(await reservePromo(promo, courseId, tx))) return { kind: 'error', error: LIMIT };
+          await releaseOrderPromo(open.id, tx);
+        }
+        await tx
+          .update(courseOrders)
+          .set({ amount: price, originalPrice: course.price, promoCode: promo, ...(samePromo ? {} : { promoReserved: !!promo }) })
+          .where(and(eq(courseOrders.id, open.id), eq(courseOrders.status, 'kutilmoqda')));
+      }
+      return { kind: 'order', id: open.id, created: false };
+    }
+    if (promo && !(await reservePromo(promo, courseId, tx))) return { kind: 'error', error: LIMIT };
+    const [o] = await tx
       .insert(courseOrders)
-      .values({ learnerId: l.id, courseId, amount: q.price, originalPrice: q.course.price, promoCode: q.promo, method: 'karta', status: 'kutilmoqda', provider: 'sayt', note: 'Saytdan buyurtma' })
+      .values({ learnerId: l.id, courseId, amount: price, originalPrice: course.price, promoCode: promo, promoReserved: !!promo, method: 'karta', status: 'kutilmoqda', provider: 'sayt', note: 'Saytdan buyurtma' })
       .returning({ id: courseOrders.id });
-    orderId = o.id;
-    await notifyTelegram(`Yangi buyurtma #${orderId}\n${l.fullName}, +${l.phone}\n${q.course.title}\nSumma: ${money(q.price)}${q.promo ? `\nPromokod: ${q.promo}` : ''}`);
-  }
+    return { kind: 'order', id: o.id, created: true };
+  });
+  if (out.kind === 'error') return { error: out.error };
+  if (out.kind === 'free') redirect(`/akademiya/oqish/${c.slug}`);
+  const orderId = out.id;
+  if (out.created) await notifyTelegram(`Yangi buyurtma #${orderId}\n${l.fullName}, +${l.phone}\n${course.title}\nSumma: ${money(price)}${promo ? `\nPromokod: ${promo}` : ''}`);
   redirect(`/akademiya/tolov/${orderId}`);
 }
 
@@ -125,7 +172,8 @@ export async function reportPaid(orderId: number, fd: FormData) {
   if (!l) return { ok: false as const, error: 'Avval tizimga kiring.' };
   const [o] = await db.select().from(courseOrders).where(and(eq(courseOrders.id, orderId), eq(courseOrders.learnerId, l.id)));
   if (!o || o.status !== 'kutilmoqda') return { ok: false as const, error: 'Buyurtma topilmadi.' };
-  const note = String(fd.get('note') || '').slice(0, 200);
+  if (await overLimit('report', `l:${l.id}`, 5, 60)) return { ok: false as const, error: LOCK_MESSAGE };
+  const note = String(fd.get('note') || '').replace(/[\u0000-\u001f]/g, ' ').slice(0, 200);
   await db.update(courseOrders).set({ method: 'karta', note: `O'quvchi to'laganini bildirdi${note ? `: ${note}` : ''}` }).where(eq(courseOrders.id, orderId));
   await notifyTelegram(`To'lov bildirildi, tekshiring: buyurtma #${orderId}\n${l.fullName}, +${l.phone}\nSumma: ${money(o.amount)}${note ? `\nIzoh: ${note}` : ''}`);
   return { ok: true as const };
@@ -155,11 +203,18 @@ export async function updateProfile(_: FormState, fd: FormData): Promise<FormSta
   const next = String(fd.get('next') || '');
   const set: Record<string, unknown> = { fullName, email: String(fd.get('email') || '').trim() || null, telegram: String(fd.get('telegram') || '').trim() || null };
   if (next) {
+    if (await overLimit('learner-pw', `l:${l.id}`, 5, 15)) return { error: LOCK_MESSAGE };
     const [row] = await db.select().from(learners).where(eq(learners.id, l.id));
-    if (!row?.passwordHash || !(await bcrypt.compare(String(fd.get('current') || ''), row.passwordHash))) return { error: "Joriy parol noto'g'ri." };
-    if (next.length < 6) return { error: "Yangi parol kamida 6 belgi bo'lsin." };
-    set.passwordHash = await bcrypt.hash(next, 10);
+    if (!(await verifyPassword(String(fd.get('current') || ''), row?.passwordHash))) return { error: "Joriy parol noto'g'ri." };
+    await clearHits('learner-pw', `l:${l.id}`);
+    const err = passwordProblem(next, l.phone);
+    if (err) return { error: err };
+    set.passwordHash = await hashPassword(next);
+    set.sessionVersion = sql`${learners.sessionVersion} + 1`;
   }
-  await db.update(learners).set(set).where(eq(learners.id, l.id));
+  if (fullName.length > 80 || String(set.email ?? '').length > 120 || String(set.telegram ?? '').length > 64) return { error: "Ma'lumot juda uzun." };
+  const [upd] = await db.update(learners).set(set).where(eq(learners.id, l.id)).returning({ v: learners.sessionVersion });
+  // Parol almashsa: boshqa qurilmalar chiqib ketadi, joriy qurilma qoladi
+  if (next) await setLearnerCookie(l.id, upd.v);
   return { error: undefined };
 }

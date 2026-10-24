@@ -1,5 +1,5 @@
 'use client';
-import { useState, useTransition, type ReactNode } from 'react';
+import { useEffect, useState, useTransition, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, Circle, Loader2, ChevronDown } from 'lucide-react';
 import { completeLesson, uncompleteLesson } from '@/app/actions/academy';
@@ -45,5 +45,26 @@ export function MobileOutline({ label, children }: { label: string; children: Re
       </button>
       {open && <div className="border-t border-line p-2">{children}</div>}
     </div>
+  );
+}
+
+/** Videoga o'quvchi ismi va raqami suv belgisi sifatida tushadi — ekrandan yozib tarqatgan odam aniqlanadi */
+export function Watermark({ text }: { text: string }) {
+  const spots = [
+    'left-[6%] top-[8%]',
+    'right-[6%] top-[30%]',
+    'left-[30%] bottom-[18%]',
+    'right-[12%] bottom-[8%]',
+    'left-[8%] top-[55%]',
+  ];
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setI((x) => (x + 1) % spots.length), 15000);
+    return () => clearInterval(t);
+  }, [spots.length]);
+  return (
+    <span aria-hidden className={`pointer-events-none absolute z-10 select-none whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-semibold text-white/35 transition-all duration-1000 sm:text-xs ${spots[i]}`}>
+      {text}
+    </span>
   );
 }

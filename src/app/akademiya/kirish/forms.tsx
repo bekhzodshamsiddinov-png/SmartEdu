@@ -49,8 +49,8 @@ export function AuthForms({ next, initial }: { next: string; initial: 'kirish' |
           </label>
           <label className="block">
             <span className="label">Parol o&apos;ylab toping</span>
-            <input name="password" type="password" minLength={6} autoComplete="new-password" className="field h-12 text-base" required />
-            <span className="mt-1 block text-xs text-fg-muted">Kamida 6 belgi.</span>
+            <input name="password" type="password" minLength={8} autoComplete="new-password" className="field h-12 text-base" required />
+            <span className="mt-1 block text-xs text-fg-muted">Kamida 8 belgi, harf va raqam aralash.</span>
           </label>
           {rState?.error && <p className="rounded-field bg-bad-soft px-3 py-2.5 text-sm font-semibold text-bad">{rState.error}</p>}
           <button disabled={rPending} className="flex h-12 w-full items-center justify-center gap-2 rounded-field bg-brand text-[15px] font-extrabold text-white hover:bg-brand-strong disabled:opacity-60">

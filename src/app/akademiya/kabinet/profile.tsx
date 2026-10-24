@@ -34,7 +34,7 @@ export function ProfileForm({ name, email, telegram }: { name: string; email: st
       </label>
       <label className="block">
         <span className="label">Yangi parol</span>
-        <input name="next" type="password" autoComplete="new-password" minLength={6} className="field" />
+        <input name="next" type="password" autoComplete="new-password" minLength={8} className="field" />
       </label>
       <div className="flex items-center gap-3 sm:col-span-2">
         <button disabled={pending} className="inline-flex h-10 items-center gap-2 rounded-field bg-ink px-5 text-sm font-bold text-white disabled:opacity-60">

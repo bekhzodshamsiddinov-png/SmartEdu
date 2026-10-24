@@ -65,6 +65,9 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
     };
   });
   if (mine) rows = rows.filter((r) => r.teacherIds.includes(user.id));
+  // Pul ma'lumotini ko'rmaydigan rollarga u umuman yuborilmaydi (faqat yashirish emas)
+  const showMoney = seesMoney(user.role) || user.role === 'admin';
+  if (!showMoney) rows = rows.map((r) => ({ ...r, balance: 0, fee: 0 }));
 
   let profile: Profile | null = null;
   const pid = Number(sp.id);
@@ -82,13 +85,13 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
       const b = balances.get(pid);
       profile = {
         student: { ...s, createdAt: s.createdAt.toISOString() },
-        enrollments: (byStudent.get(pid) ?? []).map((e) => ({ id: e.id, group: e.group, groupId: e.groupId, course: e.course, color: e.color, fee: e.fee, startDate: e.startDate, endDate: e.endDate, active: e.active })),
-        payments: pays,
+        enrollments: (byStudent.get(pid) ?? []).map((e) => ({ id: e.id, group: e.group, groupId: e.groupId, course: e.course, color: e.color, fee: showMoney ? e.fee : 0, startDate: e.startDate, endDate: e.endDate, active: e.active })),
+        payments: showMoney ? pays : [],
         attendance: att,
         grades: grd,
         notes: nts.map((n) => ({ ...n, createdAt: n.createdAt.toISOString() })),
         results: res.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })),
-        balance: { charged: b?.charged ?? 0, paid: b?.paid ?? 0, balance: b?.balance ?? 0, fee: b?.monthlyFee ?? 0 },
+        balance: showMoney ? { charged: b?.charged ?? 0, paid: b?.paid ?? 0, balance: b?.balance ?? 0, fee: b?.monthlyFee ?? 0 } : { charged: 0, paid: 0, balance: 0, fee: 0 },
         attRate: attStat[0].total ? Math.round((attStat[0].present / attStat[0].total) * 100) : null,
       };
     }
@@ -101,7 +104,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
       groups={gopts}
       courses={copts}
       role={user.role}
-      showMoney={seesMoney(user.role) || user.role === 'admin'}
+      showMoney={showMoney}
       openNew={sp.yangi === '1'}
       initial={{ q: sp.q ?? '', holat: sp.holat ?? '', yonalish: sp.yonalish ?? '', guruh: sp.guruh ?? '' }}
     />

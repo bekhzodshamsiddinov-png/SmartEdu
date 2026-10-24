@@ -18,7 +18,12 @@ export async function saveTask(id: number | null, fd: FormData) {
       dueDate: str(fd, 'dueDate'),
       priority: (str(fd, 'priority') || 'orta') as 'past' | 'orta' | 'yuqori',
     };
-    if (id) await db.update(tasks).set(v).where(eq(tasks.id, id));
+    if (id) {
+      const [t] = await db.select({ creatorId: tasks.creatorId }).from(tasks).where(eq(tasks.id, id));
+      if (!t) throw new Error('Vazifa topilmadi.');
+      if (u.role !== 'rahbar' && t.creatorId !== u.id) throw new Error('Vazifani faqat uni bergan odam tahrirlaydi.');
+      await db.update(tasks).set(v).where(eq(tasks.id, id));
+    }
     else await db.insert(tasks).values({ ...v, creatorId: u.id });
     return { message: id ? 'Vazifa yangilandi' : 'Vazifa berildi' };
   });

@@ -165,8 +165,8 @@ function StaffForm({ s, branches, onDone }: { s: S | null; branches: { id: numbe
         <Field label="Qat'iy oylik">
           <MoneyInput name="baseSalary" defaultValue={s?.baseSalary} />
         </Field>
-        <Field label={s ? 'Yangi parol' : 'Parol'} hint={s ? "O'zgartirmasangiz bo'sh qoldiring" : 'Kamida 6 belgi'}>
-          <input name="password" type="text" autoComplete="new-password" className="field" required={!s} minLength={6} />
+        <Field label={s ? 'Yangi parol' : 'Parol'} hint={s ? "O'zgartirmasangiz bo'sh qoldiring" : 'Kamida 8 belgi, harf va raqam'}>
+          <input name="password" type="text" autoComplete="new-password" className="field" required={!s} minLength={8} />
         </Field>
       </div>
       {branches.length > 1 && role !== 'rahbar' && (

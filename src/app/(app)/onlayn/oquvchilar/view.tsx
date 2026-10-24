@@ -167,7 +167,7 @@ export function LearnersView({ rows, detail }: { rows: L[]; detail: D | null }) 
           <Modal open={pw} onClose={() => setPw(false)} title="Saytga kirish paroli" sub="O'quvchi telefon raqami va shu parol bilan Akademiya saytiga kiradi" size="sm">
             <ActionForm action={setLearnerPassword.bind(null, detail.learner.id)} onDone={() => setPw(false)} onCancel={() => setPw(false)} submitLabel="Parolni o'rnatish">
               <Field label="Yangi parol">
-                <input name="password" minLength={6} defaultValue={Math.random().toString().slice(2, 8)} className="field font-mono tracking-wider" required />
+                <input name="password" minLength={8} defaultValue={genPassword()} className="field font-mono tracking-wider" required />
               </Field>
             </ActionForm>
           </Modal>
@@ -207,4 +207,15 @@ export function LearnersView({ rows, detail }: { rows: L[]; detail: D | null }) 
       )}
     </>
   );
+}
+
+/** Kriptografik tasodifiy, oson o'qiladigan parol: 4 harf + 4 raqam */
+function genPassword() {
+  const L = 'abcdefghjkmnpqrstuvwxyz';
+  const r = new Uint32Array(8);
+  crypto.getRandomValues(r);
+  let s = '';
+  for (let i = 0; i < 4; i++) s += L[r[i] % L.length];
+  for (let i = 4; i < 8; i++) s += String(r[i] % 10);
+  return s;
 }

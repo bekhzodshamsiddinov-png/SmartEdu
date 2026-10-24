@@ -1,4 +1,5 @@
 import 'server-only';
+import { createHash } from 'node:crypto';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { onlineCourses, courseModules, courseLessons } from '@/db/schema';
@@ -54,7 +55,23 @@ export function embedOf(url: string | null): { kind: 'iframe' | 'video'; src: st
   if (yt) return { kind: 'iframe', src: `https://www.youtube-nocookie.com/embed/${yt}?rel=0&modestbranding=1` };
   const vimeo = url.match(/vimeo\.com\/(?:video\/)?(\d+)(?:\/(\w+))?/);
   if (vimeo) return { kind: 'iframe', src: `https://player.vimeo.com/video/${vimeo[1]}${vimeo[2] ? `?h=${vimeo[2]}` : ''}` };
-  if (/iframe\.mediadelivery\.net|player\.mediadelivery\.net/.test(url)) return { kind: 'iframe', src: url.replace('/play/', '/embed/') };
+  const bunny = url.match(/(?:iframe|player)\.mediadelivery\.net\/(?:embed|play)\/(\d+)\/([0-9a-f-]{36})/i);
+  if (bunny) return { kind: 'iframe', src: bunnySigned(bunny[1], bunny[2]) };
   if (/\.(mp4|webm|m3u8)(\?|$)/i.test(url)) return { kind: 'video', src: url };
-  return { kind: 'iframe', src: url };
+  // Faqat ruxsat etilgan pleyerlar (CSP ham boshqasini bloklaydi)
+  return null;
+}
+
+/**
+ * Bunny Stream: imzolangan, muddati cheklangan havola (Token Authentication yoqilgan bo'lsa).
+ * Havola 4 soatdan keyin ishlamaydi — uni ko'chirib boshqalarga tarqatib bo'lmaydi.
+ * Kerakli o'zgaruvchi: BUNNY_TOKEN_KEY (Bunny → Stream → Security → Token authentication key)
+ */
+function bunnySigned(libraryId: string, videoId: string) {
+  const base = `https://iframe.mediadelivery.net/embed/${libraryId}/${videoId}?autoplay=false&preload=true&responsive=true`;
+  const key = process.env.BUNNY_TOKEN_KEY;
+  if (!key) return base;
+  const expires = Math.floor(Date.now() / 1000) + 4 * 60 * 60;
+  const token = createHash('sha256').update(key + videoId + expires).digest('hex');
+  return `${base}&token=${token}&expires=${expires}`;
 }

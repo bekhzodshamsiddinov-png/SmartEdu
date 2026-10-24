@@ -74,6 +74,7 @@ export const users = pgTable('users', {
   baseSalary: integer('base_salary').notNull().default(0),
   bonusRule: text('bonus_rule'),
   active: boolean('active').notNull().default(true),
+  sessionVersion: integer('session_version').notNull().default(0),
   hiredAt: date('hired_at'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -446,6 +447,7 @@ export const learners = pgTable('learners', {
   source: text('source'),
   note: text('note'),
   passwordHash: text('password_hash'),
+  sessionVersion: integer('session_version').notNull().default(0),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -476,6 +478,8 @@ export const courseOrders = pgTable(
     amount: integer('amount').notNull(),
     originalPrice: integer('original_price').notNull(),
     promoCode: text('promo_code'),
+    /** Promokod limiti shu buyurtma uchun band qilinganmi */
+    promoReserved: boolean('promo_reserved').notNull().default(false),
     method: text('method').notNull().default('click'),
     status: text('status').notNull().default('kutilmoqda'),
     paidAt: date('paid_at'),
@@ -519,3 +523,31 @@ export const paymeTransactions = pgTable('payme_transactions', {
   performTime: bigint('perform_time', { mode: 'number' }).notNull().default(0),
   cancelTime: bigint('cancel_time', { mode: 'number' }).notNull().default(0),
 });
+
+/** Muvaffaqiyatsiz urinishlar (brute-force himoyasi) */
+export const authAttempts = pgTable(
+  'auth_attempts',
+  {
+    id: serial('id').primaryKey(),
+    scope: text('scope').notNull(),
+    key: text('key').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('auth_attempts_idx').on(t.scope, t.key, t.createdAt)],
+);
+
+/** Xavfsizlik jurnali */
+export const auditLog = pgTable(
+  'audit_log',
+  {
+    id: serial('id').primaryKey(),
+    actorType: text('actor_type').notNull(),
+    actorId: integer('actor_id'),
+    actorName: text('actor_name'),
+    action: text('action').notNull(),
+    detail: text('detail'),
+    ip: text('ip'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('audit_log_created_idx').on(t.createdAt)],
+);

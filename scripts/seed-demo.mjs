@@ -7,7 +7,7 @@ const today = tz(new Date());
 const addDays = (s, n) => { const d = s instanceof Date ? new Date(s) : new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const rnd = (a) => a[Math.floor(Math.random() * a.length)];
 
-await sql`truncate branches, lesson_progress, course_orders, promo_codes, learners, course_lessons, course_modules, online_courses, staff_reports, tasks, graduates, results, grades, notes, leads, reconciliations, transactions, payments, attendance, lessons, enrollments, students, groups, courses, users, settings restart identity cascade`;
+await sql`truncate auth_attempts, audit_log, payme_transactions, branches, lesson_progress, course_orders, promo_codes, learners, course_lessons, course_modules, online_courses, staff_reports, tasks, graduates, results, grades, notes, leads, reconciliations, transactions, payments, attendance, lessons, enrollments, students, groups, courses, users, settings restart identity cascade`;
 const hash = await bcrypt.hash('123456', 10);
 await sql`insert into settings (id, center_name) values (1, 'United IT Clubs')`;
 const [br1] = await sql`insert into branches (name, address) values ('Davlatobod filiali', 'Davlatobod tumani') returning id`;

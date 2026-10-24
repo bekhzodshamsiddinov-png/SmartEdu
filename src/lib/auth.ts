@@ -15,11 +15,12 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const s = await verifySession(store.get(SESSION_COOKIE)?.value);
   if (!s) return null;
   const [u] = await db
-    .select({ id: users.id, fullName: users.fullName, role: users.role, phone: users.phone, position: users.position, active: users.active, branchId: users.branchId })
+    .select({ id: users.id, fullName: users.fullName, role: users.role, phone: users.phone, position: users.position, active: users.active, branchId: users.branchId, v: users.sessionVersion })
     .from(users)
     .where(eq(users.id, s.uid))
     .limit(1);
-  if (!u || !u.active) return null;
+  // Xodim o'chirilsa, paroli almashtirilsa yoki roli o'zgarsa — eski sessiya darhol yaroqsiz
+  if (!u || !u.active || u.v !== s.v) return null;
   return { id: u.id, fullName: u.fullName, role: u.role, phone: u.phone, position: u.position, branchId: u.role === 'rahbar' ? null : u.branchId };
 });
 

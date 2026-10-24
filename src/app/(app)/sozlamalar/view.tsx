@@ -2,7 +2,7 @@
 import { Download, Database, ShieldCheck } from 'lucide-react';
 import { Card, CardHeader, Field } from '@/components/ui';
 import { ActionForm } from '@/components/action-form';
-import { saveSettings, changeMyPassword, saveAcademySettings } from '@/app/actions/staff';
+import { saveSettings, changeMyPassword, saveAcademySettings, logoutEverywhere } from '@/app/actions/staff';
 import { saveBranch, toggleBranch } from '@/app/actions/branch';
 import { useEffect, useState } from 'react';
 import { Building2, Pencil, Plus, Power } from 'lucide-react';
@@ -25,9 +25,11 @@ const CSV = [
 
 type Br = { id: number; name: string; address: string | null; phone: string | null; active: boolean; students: number; groups: number };
 
+export type AuditRow = { id: number; at: string; actorName: string | null; actorType: string; action: string; detail: string | null; ip: string | null };
+
 type Academy = { payCard: string | null; payCardHolder: string | null; telegram: string | null; instagram: string | null; academyTagline: string | null };
 
-export function SettingsView({ s, counts, branches, academy, integrations }: { academy: Academy; integrations: { click: boolean; payme: boolean; telegram: boolean }; branches: Br[]; s: { centerName: string; phone: string | null; address: string | null; paymentDueDay: number; salaryDay: number; reservePercent: number }; counts: Record<string, number> }) {
+export function SettingsView({ s, counts, branches, academy, integrations, auditRows }: { auditRows: AuditRow[]; academy: Academy; integrations: { click: boolean; payme: boolean; telegram: boolean; bunny: boolean }; branches: Br[]; s: { centerName: string; phone: string | null; address: string | null; paymentDueDay: number; salaryDay: number; reservePercent: number }; counts: Record<string, number> }) {
   return (
     <>
       <PageHeader title="Sozlamalar" sub="Markaz ma'lumotlari, to'lov qoidalari va ma'lumotlar zaxirasi" />
@@ -99,15 +101,16 @@ export function SettingsView({ s, counts, branches, academy, integrations }: { a
                     <input type="password" name="current" autoComplete="current-password" className="field" required />
                   </Field>
                   <Field label="Yangi parol">
-                    <input type="password" name="next" autoComplete="new-password" minLength={6} className="field" required />
+                    <input type="password" name="next" autoComplete="new-password" minLength={8} className="field" required />
                   </Field>
                 </div>
               </ActionForm>
               <p className="mt-3 flex items-center gap-1.5 text-xs text-fg-muted">
-                <ShieldCheck className="h-3.5 w-3.5" /> Parollar shifrlangan holda saqlanadi.
+                <ShieldCheck className="h-3.5 w-3.5" /> Kamida 8 belgi, harf va raqam aralash. Parol almashsa, boshqa qurilmalardan avtomatik chiqiladi.
               </p>
             </div>
           </Card>
+          <SecurityCard rows={auditRows} />
         </div>
       </div>
     </>
@@ -170,13 +173,66 @@ function BranchesCard({ branches }: { branches: Br[] }) {
   );
 }
 
-function AcademyCard({ a, integrations }: { a: Academy; integrations: { click: boolean; payme: boolean; telegram: boolean } }) {
+const ACTION_TONE: Record<string, 'bad' | 'warn' | 'neutral'> = {
+  'Xato parol': 'warn',
+  'Kirish bloklandi': 'bad',
+  "To'lov kartasi o'zgartirildi": 'bad',
+  'Payme: ruxsatsiz so\'rov': 'bad',
+  'Click: imzo xato': 'bad',
+};
+
+function SecurityCard({ rows }: { rows: AuditRow[] }) {
+  const alerts = rows.filter((r) => ACTION_TONE[r.action] === 'bad').length;
+  return (
+    <Card>
+      <CardHeader
+        title="Xavfsizlik jurnali"
+        sub="Kirishlar, xato urinishlar, xodim va karta o'zgarishlari"
+        action={
+          <ActionButton variant="secondary" size="sm" action={logoutEverywhere} confirm="Boshqa barcha telefon va kompyuterlardan chiqilsinmi?">
+            Boshqa qurilmalardan chiqish
+          </ActionButton>
+        }
+      />
+      {alerts > 0 && (
+        <div className="mx-5 mb-3 rounded-xl bg-bad-soft px-4 py-2.5 text-[13px] font-semibold text-bad">
+          Diqqat: oxirgi yozuvlarda {alerts} ta xavfli hodisa bor. Tanish bo&apos;lmasa, parolni almashtiring.
+        </div>
+      )}
+      <ul className="max-h-[360px] divide-y divide-line overflow-y-auto border-t border-line">
+        {rows.length === 0 && <li className="px-5 py-6 text-center text-sm text-fg-muted">Hozircha yozuv yo&apos;q</li>}
+        {rows.map((r) => (
+          <li key={r.id} className="flex items-start gap-3 px-5 py-2.5 text-[13px]">
+            <span className="w-[86px] shrink-0 tnum text-fg-muted">{r.at}</span>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Badge tone={ACTION_TONE[r.action] ?? 'neutral'}>{r.action}</Badge>
+                {r.actorName && <span className="font-semibold">{r.actorName}</span>}
+              </div>
+              {(r.detail || r.ip) && (
+                <div className="mt-0.5 break-words text-xs text-fg-muted">
+                  {r.detail}
+                  {r.ip ? `${r.detail ? ' · ' : ''}IP ${r.ip}` : ''}
+                </div>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+function AcademyCard({ a, integrations }: { a: Academy; integrations: { click: boolean; payme: boolean; telegram: boolean; bunny: boolean } }) {
+  const [card, setCard] = useState(a.payCard ?? '');
+  const cardChanged = card.replace(/\D/g, '') !== (a.payCard ?? '');
   const [origin, setOrigin] = useState('');
   useEffect(() => setOrigin(window.location.origin), []);
   const rows = [
     { k: 'Click', on: integrations.click, hint: `Prepare va Complete URL: ${origin}/api/click`, env: 'CLICK_SERVICE_ID, CLICK_MERCHANT_ID, CLICK_SECRET_KEY' },
     { k: 'Payme', on: integrations.payme, hint: `Endpoint: ${origin}/api/payme, hisob maydoni: order_id`, env: 'PAYME_MERCHANT_ID, PAYME_KEY' },
-    { k: 'Telegram xabarlar', on: integrations.telegram, hint: 'Yangi buyurtma va to\'lov haqida xabar', env: 'TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID' },
+    { k: 'Telegram xabarlar', on: integrations.telegram, hint: 'Yangi buyurtma, to\'lov va xavfli hodisalar haqida xabar', env: 'TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID' },
+    { k: 'Video himoyasi (Bunny Stream)', on: integrations.bunny, hint: "Pullik video havolalari 4 soatlik imzo bilan ochiladi, ko'chirib tarqatib bo'lmaydi", env: 'BUNNY_TOKEN_KEY' },
   ];
   return (
     <Card>
@@ -188,7 +244,7 @@ function AcademyCard({ a, integrations }: { a: Academy; integrations: { click: b
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Karta raqami" hint="Karta orqali to'lov uchun ko'rsatiladi">
-              <input name="payCard" defaultValue={a.payCard ?? ''} inputMode="numeric" className="field font-mono tracking-wider" placeholder="8600 0000 0000 0000" />
+              <input name="payCard" value={card} onChange={(e) => setCard(e.target.value)} inputMode="numeric" className="field font-mono tracking-wider" placeholder="8600 0000 0000 0000" />
             </Field>
             <Field label="Karta egasi">
               <input name="payCardHolder" defaultValue={a.payCardHolder ?? ''} className="field" />
@@ -200,6 +256,11 @@ function AcademyCard({ a, integrations }: { a: Academy; integrations: { click: b
               <input name="instagram" defaultValue={a.instagram ?? ''} className="field" placeholder="@unitedit" />
             </Field>
           </div>
+          {cardChanged && (
+            <Field label="Parolingiz" hint="Karta raqami o'zgarganda xavfsizlik uchun so'raladi">
+              <input type="password" name="confirmPassword" autoComplete="current-password" className="field" required />
+            </Field>
+          )}
         </ActionForm>
         <div className="rounded-xl border border-line">
           {rows.map((r) => (

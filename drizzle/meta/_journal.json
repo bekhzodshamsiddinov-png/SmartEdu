@@ -43,6 +43,13 @@
       "when": 1792848969572,
       "tag": "0005_academy",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792860967397,
+      "tag": "0006_security",
+      "breakpoints": true
     }
   ]
 }

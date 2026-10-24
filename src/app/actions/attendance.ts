@@ -23,7 +23,15 @@ export async function saveAttendance(input: {
     if ((u.role === 'oqituvchi' || u.role === 'support') && g.teacherId !== u.id && g.supportId !== u.id)
       throw new Error("Faqat o'z guruhingiz davomatini belgilay olasiz.");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) throw new Error("Sana noto'g'ri.");
+    if (!Array.isArray(input.marks) || !input.marks.length) throw new Error("Guruhda o'quvchi yo'q.");
+    // Faqat shu guruhda haqiqatan o'qiyotgan o'quvchilar uchun davomat yoziladi
+    const enrolled = new Set(
+      (await db.execute<{ id: number }>(sql`select student_id id from enrollments where group_id = ${input.groupId} and start_date <= ${input.date} and (end_date is null or end_date >= ${input.date})`)).map((r) => r.id),
+    );
+    const STATUSES = ['keldi', 'kechikdi', 'kelmadi', 'sababli'];
+    input.marks = input.marks.filter((m) => enrolled.has(Number(m.studentId)) && STATUSES.includes(String(m.status)));
     if (!input.marks.length) throw new Error("Guruhda o'quvchi yo'q.");
+    if (input.topic && input.topic.length > 300) input.topic = input.topic.slice(0, 300);
     for (const m of input.marks) {
       await db
         .insert(attendance)

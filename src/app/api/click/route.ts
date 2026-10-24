@@ -5,11 +5,12 @@
  */
 import { NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '@/db';
-import { courseOrders } from '@/db/schema';
+import { courseOrders, paymeTransactions } from '@/db/schema';
 import { clickConfig } from '@/lib/payments';
 import { markOrderPaid } from '@/lib/order-paid';
+import { auditExternal, safeEqual } from '@/lib/security';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +31,10 @@ export async function POST(req: Request) {
 
   const prepareId = f('merchant_prepare_id');
   const signSource = clickTransId + f('service_id') + cfg.secret + merchantTransId + (action === '1' ? prepareId : '') + f('amount') + action + f('sign_time');
-  if (md5(signSource) !== f('sign_string')) return fail(-1, 'SIGN CHECK FAILED!');
+  if (!safeEqual(md5(signSource), f('sign_string'))) {
+    await auditExternal('Click: imzo xato', `buyurtma ${merchantTransId.slice(0, 20)}`);
+    return fail(-1, 'SIGN CHECK FAILED!');
+  }
   if (action !== '0' && action !== '1') return fail(-3, 'Action not found');
 
   const orderId = Number(merchantTransId);
@@ -41,6 +45,9 @@ export async function POST(req: Request) {
   if (action === '0') {
     if (o.status === 'tolandi') return fail(-4, 'Already paid');
     if (o.status !== 'kutilmoqda') return fail(-9, 'Transaction cancelled');
+    // Shu buyurtma uchun Payme to'lovi jarayonda — ikki marta to'lashning oldini olamiz
+    const [busy] = await db.select({ id: paymeTransactions.id }).from(paymeTransactions).where(and(eq(paymeTransactions.orderId, o.id), eq(paymeTransactions.state, 1)));
+    if (busy) return fail(-8, 'Order payment in progress');
     return NextResponse.json({ ...base, merchant_prepare_id: o.id, error: 0, error_note: 'Success' });
   }
 
@@ -51,6 +58,6 @@ export async function POST(req: Request) {
   if (Number(f('error')) < 0) {
     return NextResponse.json({ ...base, merchant_confirm_id: o.id, error: -9, error_note: 'Transaction cancelled' });
   }
-  await markOrderPaid(o.id, 'click', clickTransId);
+  if (!(await markOrderPaid(o.id, 'click', clickTransId))) return fail(-4, 'Already paid');
   return NextResponse.json({ ...base, merchant_confirm_id: o.id, error: 0, error_note: 'Success' });
 }

@@ -1,4 +1,6 @@
 'use server';
+import { audit, hashPassword, passwordProblem } from '@/lib/security';
+import { releaseOrderPromo, reservePromo } from '@/lib/promo';
 import { and, asc, desc, eq, gt, lt, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { onlineCourses, courseModules, courseLessons, learners, courseOrders, promoCodes } from '@/db/schema';
@@ -213,9 +215,15 @@ export async function createOrder(fd: FormData) {
     const code = str(fd, 'promoCode');
     const q = await priceFor(courseId, code);
     const statusIn = str(fd, 'status') === 'kutilmoqda' ? 'kutilmoqda' : 'tolandi';
-    if (q.promo && statusIn === 'tolandi') await reservePromo(q.promo.id);
     const custom = int(fd, 'amount');
-    const amount = custom !== null && custom !== q.course.price ? custom : q.price;
+    let amount = q.price;
+    if (custom !== null && custom !== q.course.price && custom !== q.price) {
+      // Narxni qo'lda o'zgartirish faqat rahbarga ruxsat
+      if (u.role !== 'rahbar') throw new Error("Narxni faqat rahbar o'zgartira oladi. Chegirma uchun promokoddan foydalaning.");
+      if (custom < 0 || custom > q.course.price * 3) throw new Error("Summa noto'g'ri.");
+      amount = custom;
+    }
+    if (q.promo && !(await reservePromo(q.promo.code, courseId))) throw new Error('Promokod limiti tugagan yoki faol emas.');
     const status = statusIn;
     const paidAt = status === 'tolandi' ? str(fd, 'paidAt') || today() : null;
     await db.insert(courseOrders).values({
@@ -224,6 +232,7 @@ export async function createOrder(fd: FormData) {
       amount,
       originalPrice: q.course.price,
       promoCode: q.promo?.code ?? null,
+      promoReserved: !!q.promo,
       method: str(fd, 'method') || 'click',
       status,
       paidAt,
@@ -233,18 +242,6 @@ export async function createOrder(fd: FormData) {
     });
     return { message: status === 'tolandi' ? "Sotuv qayd etildi, kursga ruxsat ochildi" : "Buyurtma qo'shildi, to'lov kutilmoqda" };
   });
-}
-
-async function reservePromo(promoId: number) {
-  const r = await db.execute<{ id: number }>(sql`
-    update promo_codes set used = used + 1
-    where id = ${promoId} and active and (max_uses is null or used < max_uses) returning id`);
-  if (!r.length) throw new Error('Promokod limiti tugagan yoki faol emas.');
-}
-
-async function releasePromo(code: string | null) {
-  if (!code) return;
-  await db.execute(sql`update promo_codes set used = greatest(0, used - 1) where code = ${code}`);
 }
 
 const TRANSITIONS: Record<string, string[]> = { kutilmoqda: ['tolandi', 'bekor'], tolandi: ['qaytarildi'], qaytarildi: [], bekor: [] };
@@ -257,17 +254,30 @@ export async function setOrderStatus(id: number, status: 'tolandi' | 'qaytarildi
     if (!o) throw new Error('Buyurtma topilmadi.');
     if (!TRANSITIONS[o.status]?.includes(status)) throw new Error("Bu buyurtma holatini bunday o'zgartirib bo'lmaydi.");
     if (status === 'tolandi') {
-      if (o.promoCode) {
-        const [p] = await db.select({ id: promoCodes.id }).from(promoCodes).where(eq(promoCodes.code, o.promoCode));
-        if (p) await reservePromo(p.id);
-      }
       const [c] = await db.select().from(onlineCourses).where(eq(onlineCourses.id, o.courseId));
       const d = today();
-      await db.update(courseOrders).set({ status, paidAt: d, accessUntil: c?.accessDays ? addDays(d, c.accessDays) : null }).where(eq(courseOrders.id, id));
+      // Atomar: faqat hali kutilayotgan buyurtma to'lanadi (parallel bosish ikki marta hisoblamaydi)
+      const done = await db
+        .update(courseOrders)
+        .set({ status, paidAt: d, accessUntil: c?.accessDays ? addDays(d, c.accessDays) : null })
+        .where(and(eq(courseOrders.id, id), eq(courseOrders.status, 'kutilmoqda')))
+        .returning({ id: courseOrders.id });
+      if (!done.length) throw new Error("Buyurtma holati allaqachon o'zgargan.");
+      if (o.promoCode && !o.promoReserved) {
+        await db.execute(sql`update promo_codes set used = used + 1 where code = ${o.promoCode}`);
+        await db.update(courseOrders).set({ promoReserved: true }).where(eq(courseOrders.id, id));
+      }
+      await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: "Onlayn to'lov tasdiqlandi", detail: `buyurtma #${id}, ${o.amount} so'm` });
       return { message: "To'landi, kursga ruxsat ochildi" };
     }
-    if (status === 'qaytarildi') await releasePromo(o.promoCode);
-    await db.update(courseOrders).set({ status }).where(eq(courseOrders.id, id));
+    const done = await db
+      .update(courseOrders)
+      .set({ status })
+      .where(and(eq(courseOrders.id, id), eq(courseOrders.status, o.status)))
+      .returning({ id: courseOrders.id });
+    if (!done.length) throw new Error("Buyurtma holati allaqachon o'zgargan.");
+    await releaseOrderPromo(id);
+    if (status === 'qaytarildi') await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: 'Onlayn buyurtma qaytarildi', detail: `buyurtma #${id}` });
     return { message: status === 'qaytarildi' ? 'Pul qaytarildi, ruxsat yopildi' : 'Buyurtma bekor qilindi' };
   });
 }
@@ -330,11 +340,14 @@ export async function togglePromo(id: number) {
 
 export async function setLearnerPassword(id: number, fd: FormData) {
   return run(async () => {
-    await assertSection('online');
+    const me = await assertSection('online');
     const pw = req(fd, 'password', 'Parol');
-    if (pw.length < 6) throw new Error("Parol kamida 6 belgi bo'lsin.");
-    const bcrypt = (await import('bcryptjs')).default;
-    await db.update(learners).set({ passwordHash: await bcrypt.hash(pw, 10) }).where(eq(learners.id, id));
+    const [l] = await db.select({ phone: learners.phone, fullName: learners.fullName }).from(learners).where(eq(learners.id, id));
+    if (!l) throw new Error("O'quvchi topilmadi.");
+    const err = passwordProblem(pw, l.phone);
+    if (err) throw new Error(err);
+    await db.update(learners).set({ passwordHash: await hashPassword(pw), sessionVersion: sql`${learners.sessionVersion} + 1` }).where(eq(learners.id, id));
+    await audit({ actorType: 'xodim', actorId: me.id, actorName: me.fullName, action: "O'quvchiga parol berildi", detail: l.fullName });
     return { message: "Parol o'rnatildi. Uni o'quvchiga yuboring." };
   });
 }

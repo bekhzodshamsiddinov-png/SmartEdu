@@ -10,7 +10,9 @@ export async function run(fn: () => Promise<void | { message?: string; id?: numb
     console.error(e);
     const msg = err?.message || 'Kutilmagan xato yuz berdi.';
     if (/duplicate key|unique/i.test(msg)) return { ok: false, error: 'Bunday yozuv allaqachon mavjud.' };
-    return { ok: false, error: msg.length > 200 ? 'Saqlashda xato yuz berdi.' : msg };
+    // Ma'lumotlar bazasi ichki xatolarini (jadval, ustun, cheklov nomlari) foydalanuvchiga ko'rsatmaymiz
+    const internal = /violates|constraint|relation |column |syntax|invalid input|enum|postgres|ECONN|timeout|null value|foreign key|out of range/i.test(msg);
+    return { ok: false, error: internal || msg.length > 200 ? "Saqlashda xato yuz berdi. Ma'lumotlarni tekshirib qayta urinib ko'ring." : msg };
   }
 }
 

@@ -1,16 +1,19 @@
 'use server';
-import { eq } from 'drizzle-orm';
-import bcrypt from 'bcryptjs';
+import { eq, sql } from 'drizzle-orm';
+import { cookies } from 'next/headers';
 import { db } from '@/db';
 import { users, settings, type Role } from '@/db/schema';
 import { assertSection, getCurrentUser } from '@/lib/auth';
 import { run, str, req, int } from '@/lib/action';
 import { normalizePhone } from '@/lib/format';
 import { ROLE_LABELS } from '@/lib/roles';
+import { notifyTelegram } from '@/lib/payments';
+import { LOCK_MESSAGE, audit, clearHits, hashPassword, overLimit, passwordProblem, verifyPassword } from '@/lib/security';
+import { SESSION_COOKIE, sessionCookieOptions, signSession } from '@/lib/session';
 
 export async function saveStaff(id: number | null, fd: FormData) {
   return run(async () => {
-    await assertSection('staff');
+    const me = await assertSection('staff');
     const role = req(fd, 'role', 'Lavozim') as Role;
     if (!(role in ROLE_LABELS)) throw new Error("Lavozim noto'g'ri.");
     const v = {
@@ -24,15 +27,29 @@ export async function saveStaff(id: number | null, fd: FormData) {
       branchId: role === 'rahbar' ? null : int(fd, 'branchId'),
     };
     const pw = str(fd, 'password');
+    if (pw) {
+      const err = passwordProblem(pw, v.phone);
+      if (err) throw new Error(err);
+    }
     if (id) {
+      const [old] = await db.select().from(users).where(eq(users.id, id));
+      if (!old) throw new Error('Xodim topilmadi.');
+      if (old.id === me.id && role !== 'rahbar') throw new Error("O'zingizning rahbar lavozimingizni o'zgartira olmaysiz.");
+      // Parol, lavozim, filial yoki telefon o'zgarsa — xodimning barcha ochiq sessiyalari yopiladi
+      const revoke = !!pw || old.role !== role || old.branchId !== v.branchId || old.phone !== v.phone;
       await db
         .update(users)
-        .set({ ...v, ...(pw ? { passwordHash: await bcrypt.hash(pw, 10) } : {}) })
+        .set({ ...v, ...(pw ? { passwordHash: await hashPassword(pw) } : {}), ...(revoke ? { sessionVersion: sql`${users.sessionVersion} + 1` } : {}) })
         .where(eq(users.id, id));
+      await audit({
+        actorType: 'xodim', actorId: me.id, actorName: me.fullName, action: 'Xodim tahrirlandi',
+        detail: `${old.fullName}${old.role !== role ? `: lavozim ${old.role} → ${role}` : ''}${pw ? ', parol yangilandi' : ''}`,
+      });
       return { message: "Xodim ma'lumotlari yangilandi" };
     }
-    if (!pw || pw.length < 6) throw new Error("Parol kamida 6 belgidan iborat bo'lsin.");
-    await db.insert(users).values({ ...v, passwordHash: await bcrypt.hash(pw, 10) });
+    if (!pw) throw new Error('Yangi xodim uchun parol kiriting.');
+    await db.insert(users).values({ ...v, passwordHash: await hashPassword(pw) });
+    await audit({ actorType: 'xodim', actorId: me.id, actorName: me.fullName, action: "Xodim qo'shildi", detail: `${v.fullName} (${role})` });
     return { message: "Xodim qo'shildi" };
   });
 }
@@ -43,7 +60,8 @@ export async function toggleStaff(id: number) {
     if (me.id === id) throw new Error("O'zingizni o'chira olmaysiz.");
     const [u] = await db.select().from(users).where(eq(users.id, id));
     if (!u) throw new Error('Xodim topilmadi.');
-    await db.update(users).set({ active: !u.active }).where(eq(users.id, id));
+    await db.update(users).set({ active: !u.active, sessionVersion: sql`${users.sessionVersion} + 1` }).where(eq(users.id, id));
+    await audit({ actorType: 'xodim', actorId: me.id, actorName: me.fullName, action: u.active ? 'Xodim faolsizlantirildi' : 'Xodim faollashtirildi', detail: u.fullName });
     return { message: u.active ? 'Xodim faolsizlantirildi' : 'Xodim qayta faollashtirildi' };
   });
 }
@@ -53,11 +71,33 @@ export async function changeMyPassword(fd: FormData) {
     const me = await getCurrentUser();
     if (!me) throw new Error('Tizimga qayta kiring.');
     const [u] = await db.select().from(users).where(eq(users.id, me.id));
-    if (!(await bcrypt.compare(req(fd, 'current', 'Joriy parol'), u.passwordHash))) throw new Error("Joriy parol noto'g'ri.");
+    if (await overLimit('staff-pw', `u:${me.id}`, 5, 15)) throw new Error(LOCK_MESSAGE);
+    if (!(await verifyPassword(req(fd, 'current', 'Joriy parol'), u.passwordHash))) throw new Error("Joriy parol noto'g'ri.");
+    await clearHits('staff-pw', `u:${me.id}`);
     const next = req(fd, 'next', 'Yangi parol');
-    if (next.length < 6) throw new Error("Yangi parol kamida 6 belgi bo'lsin.");
-    await db.update(users).set({ passwordHash: await bcrypt.hash(next, 10) }).where(eq(users.id, me.id));
-    return { message: "Parol o'zgartirildi" };
+    const err = passwordProblem(next, u.phone);
+    if (err) throw new Error(err);
+    const [r] = await db
+      .update(users)
+      .set({ passwordHash: await hashPassword(next), sessionVersion: sql`${users.sessionVersion} + 1` })
+      .where(eq(users.id, me.id))
+      .returning({ v: users.sessionVersion });
+    // Boshqa qurilmalardagi sessiyalar yopiladi, joriy qurilma qoladi
+    (await cookies()).set(SESSION_COOKIE, await signSession({ uid: u.id, role: u.role, v: r.v }), sessionCookieOptions);
+    await audit({ actorType: 'xodim', actorId: me.id, actorName: me.fullName, action: "Parolini o'zgartirdi" });
+    return { message: "Parol o'zgartirildi. Boshqa qurilmalardan chiqildi." };
+  });
+}
+
+/** Barcha qurilmalardan chiqish (telefon yo'qolsa) */
+export async function logoutEverywhere() {
+  return run(async () => {
+    const me = await getCurrentUser();
+    if (!me) throw new Error('Tizimga qayta kiring.');
+    const [r] = await db.update(users).set({ sessionVersion: sql`${users.sessionVersion} + 1` }).where(eq(users.id, me.id)).returning({ v: users.sessionVersion });
+    (await cookies()).set(SESSION_COOKIE, await signSession({ uid: me.id, role: me.role, v: r.v }), sessionCookieOptions);
+    await audit({ actorType: 'xodim', actorId: me.id, actorName: me.fullName, action: 'Barcha qurilmalardan chiqdi' });
+    return { message: 'Boshqa barcha qurilmalardan chiqildi' };
   });
 }
 
@@ -74,24 +114,48 @@ export async function saveSettings(fd: FormData) {
       updatedAt: new Date(),
     };
     await db.insert(settings).values({ id: 1, ...v }).onConflictDoUpdate({ target: settings.id, set: v });
+    const me = await getCurrentUser();
+    await audit({ actorType: 'xodim', actorId: me?.id, actorName: me?.fullName, action: 'Sozlamalar saqlandi' });
     return { message: 'Sozlamalar saqlandi' };
   });
 }
 
 export async function saveAcademySettings(fd: FormData) {
   return run(async () => {
-    await assertSection('settings');
+    const me = await assertSection('settings');
     const card = (str(fd, 'payCard') ?? '').replace(/\D/g, '');
     if (card && card.length !== 16) throw new Error("Karta raqami 16 ta raqamdan iborat bo'lsin.");
+    const handle = (raw: string | null, re: RegExp) => {
+      if (!raw) return null;
+      const h = raw.replace(re, '').replace(/^@/, '').replace(/\/$/, '');
+      if (!/^[A-Za-z0-9_.]{2,64}$/.test(h)) throw new Error("Telegram/Instagram nomida faqat harf, raqam, _ va . bo'lsin.");
+      return h;
+    };
     const v = {
       payCard: card || null,
-      payCardHolder: str(fd, 'payCardHolder'),
-      telegram: str(fd, 'telegram')?.replace(/^https?:\/\/t\.me\//, '').replace(/^@/, '') ?? null,
-      instagram: str(fd, 'instagram')?.replace(/^https?:\/\/(www\.)?instagram\.com\//, '').replace(/^@/, '').replace(/\/$/, '') ?? null,
-      academyTagline: str(fd, 'academyTagline'),
+      payCardHolder: str(fd, 'payCardHolder')?.slice(0, 80) ?? null,
+      telegram: handle(str(fd, 'telegram'), /^https?:\/\/t\.me\//),
+      instagram: handle(str(fd, 'instagram'), /^https?:\/\/(www\.)?instagram\.com\//),
+      academyTagline: str(fd, 'academyTagline')?.slice(0, 200) ?? null,
       updatedAt: new Date(),
     };
+    const [cur] = await db.select({ payCard: settings.payCard }).from(settings).where(eq(settings.id, 1));
+    const cardChanged = (cur?.payCard ?? null) !== v.payCard;
+    if (cardChanged) {
+      // Pul tushadigan karta — eng nozik joy: o'zgartirish uchun parolni qayta so'raymiz
+      if (await overLimit('staff-pw', `u:${me.id}`, 5, 15)) throw new Error(LOCK_MESSAGE);
+      const [u] = await db.select({ hash: users.passwordHash }).from(users).where(eq(users.id, me.id));
+      if (!(await verifyPassword(str(fd, 'confirmPassword') ?? '', u?.hash))) {
+        throw new Error("Karta raqamini o'zgartirish uchun parolingizni to'g'ri kiriting.");
+      }
+      await clearHits('staff-pw', `u:${me.id}`);
+    }
     await db.insert(settings).values({ id: 1, ...v }).onConflictDoUpdate({ target: settings.id, set: v });
+    if (cardChanged) {
+      const mask = (c: string | null | undefined) => (c ? `**** ${c.slice(-4)}` : "yo'q");
+      await audit({ actorType: 'xodim', actorId: me.id, actorName: me.fullName, action: "To'lov kartasi o'zgartirildi", detail: `${mask(cur?.payCard)} → ${mask(v.payCard)}` });
+      await notifyTelegram(`⚠️ Akademiya to'lov kartasi o'zgartirildi: ${mask(cur?.payCard)} → ${mask(v.payCard)}\nKim: ${me.fullName}`);
+    }
     return { message: 'Akademiya sozlamalari saqlandi' };
   });
 }

@@ -10,6 +10,7 @@ import { db } from '@/db';
 import { courseOrders, paymeTransactions } from '@/db/schema';
 import { paymeConfig } from '@/lib/payments';
 import { markOrderPaid, markOrderRefunded } from '@/lib/order-paid';
+import { auditExternal, safeEqual } from '@/lib/security';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,7 +59,10 @@ export async function POST(req: Request) {
   }
   const auth = req.headers.get('authorization') || '';
   const expected = cfg ? 'Basic ' + Buffer.from(`Paycom:${cfg.key}`).toString('base64') : null;
-  if (!cfg || auth !== expected) return reply(body.id, { error: E.auth });
+  if (!cfg || !expected || !safeEqual(auth, expected)) {
+    if (cfg) await auditExternal("Payme: ruxsatsiz so'rov", String(body.method ?? '').slice(0, 40));
+    return reply(body.id, { error: E.auth });
+  }
 
   const p = body.params ?? {};
   const now = Date.now();
@@ -99,8 +103,25 @@ export async function POST(req: Request) {
         await db.update(paymeTransactions).set({ state: -1, reason: 4, cancelTime: now }).where(eq(paymeTransactions.id, tx.id));
         return reply(body.id, { error: E.cantDo });
       }
-      await db.update(paymeTransactions).set({ state: 2, performTime: now }).where(eq(paymeTransactions.id, tx.id));
-      await markOrderPaid(tx.orderId, 'payme', String(p.id));
+      // Bitta tranzaksiyada: Payme tranzaksiyasi 1→2 va buyurtma kutilmoqda→to'landi. Biri bo'lmasa — ikkalasi ham bekor.
+      // Buyurtma shu orada boshqa yo'l bilan (masalan Click) to'langan bo'lsa — ikki marta pul olmaymiz.
+      const done = await db.transaction(async (t) => {
+        const moved = await t
+          .update(paymeTransactions)
+          .set({ state: 2, performTime: now })
+          .where(and(eq(paymeTransactions.id, tx.id), eq(paymeTransactions.state, 1)))
+          .returning({ id: paymeTransactions.id });
+        if (!moved.length) return 'state';
+        if (!(await markOrderPaid(tx.orderId, 'payme', tx.paymeId, t))) {
+          t.rollback();
+        }
+        return 'ok';
+      }).catch((e) => (String(e?.message || e).includes('Rollback') ? 'paid' : Promise.reject(e)));
+      if (done !== 'ok') {
+        const [again] = await db.select().from(paymeTransactions).where(eq(paymeTransactions.id, tx.id));
+        if (again?.state === 2) return reply(body.id, { result: { transaction: String(tx.id), perform_time: again.performTime, state: 2 } });
+        return reply(body.id, { error: E.cantDo });
+      }
       return reply(body.id, { result: { transaction: String(tx.id), perform_time: now, state: 2 } });
     }
     case 'CancelTransaction': {
@@ -108,13 +129,28 @@ export async function POST(req: Request) {
       if (!tx) return reply(body.id, { error: E.txNotFound });
       const reason = Number(p.reason) || null;
       if (tx.state === 1) {
-        await db.update(paymeTransactions).set({ state: -1, reason, cancelTime: now }).where(eq(paymeTransactions.id, tx.id));
-        return reply(body.id, { result: { transaction: String(tx.id), cancel_time: now, state: -1 } });
+        const c1 = await db
+          .update(paymeTransactions)
+          .set({ state: -1, reason, cancelTime: now })
+          .where(and(eq(paymeTransactions.id, tx.id), eq(paymeTransactions.state, 1)))
+          .returning({ id: paymeTransactions.id });
+        if (c1.length) return reply(body.id, { result: { transaction: String(tx.id), cancel_time: now, state: -1 } });
+        // shu orada holat o'zgargan — qaytadan o'qiymiz
+        const [fresh] = await db.select().from(paymeTransactions).where(eq(paymeTransactions.id, tx.id));
+        if (fresh?.state !== 2) return reply(body.id, { result: { transaction: String(tx.id), cancel_time: fresh?.cancelTime, state: fresh?.state } });
+        tx.state = 2;
       }
       if (tx.state === 2) {
-        await db.update(paymeTransactions).set({ state: -2, reason, cancelTime: now }).where(eq(paymeTransactions.id, tx.id));
-        await markOrderRefunded(tx.orderId);
-        return reply(body.id, { result: { transaction: String(tx.id), cancel_time: now, state: -2 } });
+        await db.transaction(async (t) => {
+          const c2 = await t
+            .update(paymeTransactions)
+            .set({ state: -2, reason, cancelTime: now })
+            .where(and(eq(paymeTransactions.id, tx.id), eq(paymeTransactions.state, 2)))
+            .returning({ id: paymeTransactions.id });
+          if (c2.length) await markOrderRefunded(tx.orderId, 'payme', tx.paymeId, t);
+        });
+        const [fresh] = await db.select().from(paymeTransactions).where(eq(paymeTransactions.id, tx.id));
+        return reply(body.id, { result: { transaction: String(tx.id), cancel_time: fresh?.cancelTime ?? now, state: fresh?.state ?? -2 } });
       }
       return reply(body.id, { result: { transaction: String(tx.id), cancel_time: tx.cancelTime, state: tx.state } });
     }

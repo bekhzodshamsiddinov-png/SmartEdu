@@ -28,8 +28,8 @@ export function SetupForm({ needCode }: { needCode: boolean }) {
       </label>
       <label className="block">
         <span className="label">Parol</span>
-        <input name="password" type="password" minLength={6} autoComplete="new-password" className="field h-11" required />
-        <span className="mt-1 block text-xs text-fg-muted">Kamida 6 belgi.</span>
+        <input name="password" type="password" minLength={8} autoComplete="new-password" className="field h-11" required />
+        <span className="mt-1 block text-xs text-fg-muted">Kamida 8 belgi, harf va raqam aralash.</span>
       </label>
       {state?.error && <p className="rounded-field bg-bad-soft px-3 py-2.5 text-sm font-medium text-bad">{state.error}</p>}
       <button disabled={pending} className="flex h-12 w-full items-center justify-center gap-2 rounded-field bg-brand text-[15px] font-bold text-white hover:bg-brand-strong disabled:opacity-60">

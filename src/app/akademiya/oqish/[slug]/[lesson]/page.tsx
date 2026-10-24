@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight, Lock, PlayCircle, FileText, ListChecks, Wrench, 
 import { db } from '@/db';
 import { courseBySlug, curriculum, embedOf, hasAccess } from '@/lib/academy';
 import { getLearner } from '@/lib/learner';
-import { CompleteToggle, MobileOutline } from './client';
+import { CompleteToggle, MobileOutline, Watermark } from './client';
 
 const KIND_ICON = { video: PlayCircle, matn: FileText, test: ListChecks, topshiriq: Wrench } as const;
 
@@ -26,6 +26,8 @@ export default async function Player({ params }: { params: Promise<{ slug: strin
   const cur = all[idx];
   const l = await getLearner();
   const access = await hasAccess(l?.id, c.id);
+  // Sotuvga chiqmagan kursning bepul darslari ham yopiq
+  if (!access && c.status === 'qoralama') notFound();
   if (!access && !cur.isFree) redirect(l ? `/akademiya/kurs/${slug}` : `/akademiya/kirish?next=${encodeURIComponent(`/akademiya/oqish/${slug}/${cur.id}`)}`);
   const done = new Set(
     l ? (await db.execute<{ lesson_id: number }>(sql`select lesson_id from lesson_progress where learner_id = ${l.id}`)).map((r) => r.lesson_id) : [],
@@ -83,11 +85,15 @@ export default async function Player({ params }: { params: Promise<{ slug: strin
         <div className="mt-3 overflow-hidden rounded-2xl bg-ink">
           {embed ? (
             embed.kind === 'iframe' ? (
-              <div className="aspect-video">
+              <div className="relative aspect-video">
+                {l && access && <Watermark text={`${l.fullName} · +${l.phone}`} />}
                 <iframe src={embed.src} title={cur.title} className="h-full w-full" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowFullScreen />
               </div>
             ) : (
-              <video src={embed.src} controls controlsList="nodownload" className="aspect-video w-full" />
+              <div className="relative">
+                {l && access && <Watermark text={`${l.fullName} · +${l.phone}`} />}
+                <video src={embed.src} controls controlsList="nodownload noplaybackrate" disablePictureInPicture className="aspect-video w-full" />
+              </div>
             )
           ) : (
             <div className="grid aspect-[16/6] place-items-center px-6 text-center text-white">

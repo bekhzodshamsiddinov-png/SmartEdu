@@ -1,5 +1,5 @@
 'use server';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { students, enrollments, groups, courses, notes, grades, results, graduates, leads } from '@/db/schema';
 import { assertSection } from '@/lib/auth';
@@ -83,6 +83,17 @@ export async function updateStudent(id: number, fd: FormData) {
   });
 }
 
+/** O'qituvchi/yordamchi faqat o'z guruhidagi o'quvchiga tegishi mumkin */
+async function assertOwnStudent(u: { id: number; role: string }, studentId: number) {
+  if (u.role !== 'oqituvchi' && u.role !== 'support') return;
+  const [r] = await db.execute<{ c: number }>(sql`
+    select count(*)::int c from enrollments e join groups g on g.id = e.group_id
+    where e.student_id = ${studentId} and e.active and e.end_date is null and (g.teacher_id = ${u.id} or g.support_id = ${u.id})`);
+  if (!r?.c) throw new Error("Bu o'quvchi sizning guruhingizda emas.");
+}
+
+const canSetFee = (role: string) => role === 'rahbar' || role === 'admin';
+
 /** Holatni o'zgartirish: ketdi / bitirdi / muzlatildi / qayta faollashtirildi */
 export async function changeStatus(id: number, fd: FormData) {
   return run(async () => {
@@ -91,6 +102,12 @@ export async function changeStatus(id: number, fd: FormData) {
     await assertBranch('student', id);
     await assertBranch('group', int(fd, 'groupId'));
     const status = req(fd, 'status', 'Holat') as 'faol' | 'xavf' | 'muzlatilgan' | 'ketgan' | 'bitirgan';
+    if (!['faol', 'xavf', 'muzlatilgan', 'ketgan', 'bitirgan'].includes(status)) throw new Error("Holat noto'g'ri.");
+    if (u.role === 'oqituvchi' || u.role === 'support') {
+      // O'qituvchi faqat o'z o'quvchisini "xavf ostida" deb belgilay oladi
+      if (status !== 'xavf') throw new Error("Holatni administrator o'zgartiradi.");
+      await assertOwnStudent(u, id);
+    }
     const date = str(fd, 'date') || today();
     if (status === 'ketgan') {
       const reason = req(fd, 'leftReason', 'Ketish sababi');
@@ -115,9 +132,12 @@ export async function changeStatus(id: number, fd: FormData) {
       return { message: "O'qish vaqtincha to'xtatildi" };
     }
     await db.update(students).set({ status, leftAt: null, leftReason: null }).where(eq(students.id, id));
-    const groupId = int(fd, 'groupId');
+    // O'qituvchi guruhga qo'sha olmaydi (to'lov hisoblanishi boshlanadi)
+    const groupId = u.role === 'oqituvchi' || u.role === 'support' ? null : int(fd, 'groupId');
     if (groupId) {
-      const fee = int(fd, 'monthlyFee') ?? (await feeFor(groupId));
+      const custom = canSetFee(u.role) ? int(fd, 'monthlyFee') : null;
+      if (custom !== null && custom < 0) throw new Error("Oylik to'lov manfiy bo'lmaydi.");
+      const fee = custom ?? (await feeFor(groupId));
       await db.insert(enrollments).values({ studentId: id, groupId, monthlyFee: fee, startDate: date });
     }
     return { message: status === 'xavf' ? 'Xavf ostida deb belgilandi' : "O'quvchi faol" };
@@ -128,6 +148,7 @@ export async function changeStatus(id: number, fd: FormData) {
 export async function updateReturn(id: number, fd: FormData) {
   return run(async () => {
     const u = await assertSection('students');
+    if (u.role === 'oqituvchi' || u.role === 'support') throw new Error("Buni administrator yoki sotuv bo'limi yozadi.");
     await assertBranch('student', id);
     const attempt = req(fd, 'returnAttempt', 'Nima qilindi');
     const result = req(fd, 'returnResult', 'Natija');
@@ -145,7 +166,9 @@ export async function enroll(studentId: number, fd: FormData) {
     if (!groupId) throw new Error('Guruhni tanlang.');
     await assertBranch('student', studentId);
     await assertBranch('group', groupId);
-    const fee = int(fd, 'monthlyFee') ?? (await feeFor(groupId));
+    const custom = canSetFee(u.role) ? int(fd, 'monthlyFee') : null;
+    if (custom !== null && custom < 0) throw new Error("Oylik to'lov manfiy bo'lmaydi.");
+    const fee = custom ?? (await feeFor(groupId));
     await db.insert(enrollments).values({ studentId, groupId, monthlyFee: fee, startDate: str(fd, 'startDate') || today() });
     const [g] = await db.select({ b: groups.branchId }).from(groups).where(eq(groups.id, groupId));
     if (g?.b) await db.update(students).set({ branchId: g.b }).where(eq(students.id, studentId));
@@ -180,6 +203,7 @@ export async function addNote(entityType: 'student' | 'lead', entityId: number, 
   return run(async () => {
     const u = await assertSection(entityType === 'lead' ? 'leads' : 'students');
     await assertBranch(entityType === 'lead' ? 'lead' : 'student', entityId);
+    if (entityType === 'student') await assertOwnStudent(u, entityId);
     await db.insert(notes).values({ entityType, entityId, kind: str(fd, 'kind') || 'izoh', text: req(fd, 'text', 'Matn'), authorId: u.id });
     return { message: 'Yozib qo\'yildi' };
   });
@@ -189,6 +213,7 @@ export async function addGrade(studentId: number, fd: FormData) {
   return run(async () => {
     const u = await assertSection('students');
     await assertBranch('student', studentId);
+    await assertOwnStudent(u, studentId);
     const score = int(fd, 'score');
     if (score === null || score < 0 || score > 100) throw new Error("Baho 0 dan 100 gacha bo'lsin.");
     await db.insert(grades).values({ studentId, groupId: int(fd, 'groupId'), period: req(fd, 'period', 'Davr'), score, comment: str(fd, 'comment'), teacherId: u.id });
@@ -198,8 +223,9 @@ export async function addGrade(studentId: number, fd: FormData) {
 
 export async function addResult(studentId: number, fd: FormData) {
   return run(async () => {
-    await assertSection('students');
+    const u = await assertSection('students');
     await assertBranch('student', studentId);
+    await assertOwnStudent(u, studentId);
     await db.insert(results).values({
       studentId,
       type: req(fd, 'type', 'Turi'),
