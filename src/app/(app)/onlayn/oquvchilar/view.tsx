@@ -1,12 +1,12 @@
 'use client';
 import { useMemo, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Search, Users, Pencil, Phone, Send, Mail } from 'lucide-react';
+import { Search, Users, Pencil, Phone, Send, Mail, KeyRound } from 'lucide-react';
 import { Avatar, Badge, Button, Card, Empty, Field, PageHeader, Progress } from '@/components/ui';
 import { Drawer, Modal } from '@/components/modal';
 import { ActionForm } from '@/components/action-form';
 import { OnlineTabsClient } from '@/components/online/tabs-client';
-import { saveLearner } from '@/app/actions/online';
+import { saveLearner, setLearnerPassword } from '@/app/actions/online';
 import { LEAD_SOURCES, ORDER_METHODS, ORDER_STATUS } from '@/lib/constants';
 import { money, phone } from '@/lib/format';
 import { fmtDate, fmtShort } from '@/lib/dates';
@@ -23,6 +23,7 @@ export function LearnersView({ rows, detail }: { rows: L[]; detail: D | null }) 
   const path = usePathname();
   const [q, setQ] = useState('');
   const [edit, setEdit] = useState(false);
+  const [pw, setPw] = useState(false);
   const list = useMemo(() => {
     const t = q.toLowerCase().trim();
     const d = q.replace(/\D/g, '');
@@ -98,6 +99,9 @@ export function LearnersView({ rows, detail }: { rows: L[]; detail: D | null }) 
             <Button size="sm" variant="secondary" onClick={() => setEdit(true)}>
               <Pencil className="h-3.5 w-3.5" /> Tahrirlash
             </Button>
+            <Button size="sm" variant="secondary" onClick={() => setPw(true)}>
+              <KeyRound className="h-3.5 w-3.5" /> Parol berish
+            </Button>
           </div>
           <div className="space-y-4 p-5">
             <div className="card p-4">
@@ -160,6 +164,13 @@ export function LearnersView({ rows, detail }: { rows: L[]; detail: D | null }) 
               ))}
             </dl>
           </div>
+          <Modal open={pw} onClose={() => setPw(false)} title="Saytga kirish paroli" sub="O'quvchi telefon raqami va shu parol bilan Akademiya saytiga kiradi" size="sm">
+            <ActionForm action={setLearnerPassword.bind(null, detail.learner.id)} onDone={() => setPw(false)} onCancel={() => setPw(false)} submitLabel="Parolni o'rnatish">
+              <Field label="Yangi parol">
+                <input name="password" minLength={6} defaultValue={Math.random().toString().slice(2, 8)} className="field font-mono tracking-wider" required />
+              </Field>
+            </ActionForm>
+          </Modal>
           <Modal open={edit} onClose={() => setEdit(false)} title="Ma'lumotlarni tahrirlash" size="sm">
             <ActionForm action={saveLearner.bind(null, detail.learner.id)} onDone={() => setEdit(false)} onCancel={() => setEdit(false)}>
               <Field label="Ism-familiya">

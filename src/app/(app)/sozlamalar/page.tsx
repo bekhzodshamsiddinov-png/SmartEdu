@@ -17,5 +17,11 @@ export default async function SettingsPage() {
       (select count(*) from students s where s.branch_id = b.id and s.status in ('faol','xavf'))::int students,
       (select count(*) from groups g where g.branch_id = b.id and g.active)::int groups
     from branches b order by b.id`);
-  return <SettingsView branches={[...branches]} s={{ centerName: s.centerName, phone: s.phone, address: s.address, paymentDueDay: s.paymentDueDay, salaryDay: s.salaryDay, reservePercent: s.reservePercent }} counts={c} />;
+  const integrations = {
+    click: !!(process.env.CLICK_SERVICE_ID && process.env.CLICK_MERCHANT_ID && process.env.CLICK_SECRET_KEY),
+    payme: !!(process.env.PAYME_MERCHANT_ID && process.env.PAYME_KEY),
+    telegram: !!(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID),
+  };
+  const academy = { payCard: s.payCard, payCardHolder: s.payCardHolder, telegram: s.telegram, instagram: s.instagram, academyTagline: s.academyTagline };
+  return <SettingsView integrations={integrations} academy={academy} branches={[...branches]} s={{ centerName: s.centerName, phone: s.phone, address: s.address, paymentDueDay: s.paymentDueDay, salaryDay: s.salaryDay, reservePercent: s.reservePercent }} counts={c} />;
 }

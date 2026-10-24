@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { SESSION_COOKIE, verifySession } from '@/lib/session';
 
-const PUBLIC = ['/login', '/setup'];
+const PUBLIC = ['/login', '/setup', '/akademiya', '/api/payme', '/api/click'];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

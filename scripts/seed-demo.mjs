@@ -110,5 +110,30 @@ for (let m = 5; m >= 0; m--) {
 }
 await sql`insert into tasks (title, assignee_id, creator_id, due_date, priority) values ('Oktabr qarzdorlari bilan uchrashish', ${admin}, ${boss.id}, ${addDays(today, -1)}, 'yuqori'), ('AI-4 guruhi uchun dars rejasini yuklash', ${t1}, ${boss.id}, ${addDays(today, 3)}, 'orta'), ('Bitiruvchilar bazasini yig''ish', ${sales}, ${boss.id}, ${addDays(today, 5)}, 'orta')`;
 await sql`insert into staff_reports (user_id, date, done, problems, plan) values (${admin}, ${addDays(today, -1)}, '5 ta dars o''tdi, 3 ta kelmaganga qo''ng''iroq qilindi, 4 ta to''lov qabul qilindi', 'KS-5 da proyektor ishlamayapti', 'Qarzdorlar bilan gaplashish')`;
+await sql`update settings set pay_card = '8600123412341234', pay_card_holder = 'BEKHZOD SHAMSIDDINOV', telegram = 'unitedit', academy_tagline = null where id = 1`;
+const vids = ['https://youtu.be/dQw4w9WgXcQ', 'https://www.youtube.com/watch?v=aqz-KE-bpKQ'];
+const mk = async (title, slug, category, price, old, color, mods, outcomes, audience) => {
+  const [c] = await sql`insert into online_courses (title, slug, subtitle, category, price, old_price, color, status, outcomes, audience, description)
+    values (${title}, ${slug}, ${category === 'ai' ? "Ish va o'qishda AI vositalaridan to'g'ri foydalanishni amaliy mashqlar bilan o'rganing" : "Kanal ochishdan birinchi daromadgacha: ssenariy, montaj, SEO va monetizatsiya"}, ${category}, ${price}, ${old}, ${color}, 'sotuvda', ${outcomes}, ${audience}, ${"Kurs qisqa video darslar va har bir moduldan keyingi amaliy topshiriqlardan iborat."}) returning id`;
+  let pos = 0;
+  for (const [mi, [mt, lessons]] of mods.entries()) {
+    const [m] = await sql`insert into course_modules (course_id, title, position) values (${c.id}, ${`${mi + 1}-modul. ${mt}`}, ${mi}) returning id`;
+    for (const [li, lt] of lessons.entries()) {
+      await sql`insert into course_lessons (module_id, course_id, title, kind, video_url, duration_min, is_free, position, content)
+        values (${m.id}, ${c.id}, ${lt}, ${li === lessons.length - 1 && mi > 0 ? 'topshiriq' : 'video'}, ${vids[(pos++) % 2]}, ${8 + ((li * 7 + mi * 3) % 17)}, ${mi === 0 && li === 0}, ${li}, ${li === lessons.length - 1 && mi > 0 ? 'Darsda o\'rganilganlarni o\'z ishingizda qo\'llang va natijani Telegram guruhga yuboring.' : null})`;
+    }
+  }
+  return c.id;
+};
+await mk("ChatGPT va AI vositalari: amaliy kurs", 'chatgpt-va-ai-vositalari', 'ai', 490000, 690000, '#008A70',
+  [['Kirish', ["AI nima va u qanday ishlaydi", 'ChatGPT bilan birinchi suhbat', "Prompt yozishning 5 qoidasi"]],
+   ['Ishda AI', ["Matn va xat tayyorlash", "Excel jadvallari bilan ishlash", "Taqdimot tayyorlash", 'Amaliy topshiriq']],
+   ["Rasm va video", ["Rasm yaratish vositalari", "Qisqa video tayyorlash", 'Amaliy topshiriq']]],
+  "Aniq va natijali prompt yozish\nMatn, xat va hisobotlarni tez tayyorlash\nAI bilan taqdimot va rasm yaratish\nKundalik ishda vaqtni tejash", "Talabalar va o'quvchilar\nOfis xodimlari\nTadbirkorlar");
+await mk("YouTube blogging: noldan daromadgacha", 'youtube-blogging', 'youtube', 590000, null, '#C2862A',
+  [['Kanal', ["Nisha tanlash", 'Kanalni to\'g\'ri ochish']],
+   ['Kontent', ["Ssenariy yozish", 'Telefonda suratga olish', 'CapCut da montaj', 'Amaliy topshiriq']],
+   ['O\'sish', ['SEO: nom, tavsif, teglar', 'Monetizatsiya', 'Amaliy topshiriq']]],
+  "O'z mavzungizda kanal ochish\nTelefonda sifatli video olish va montaj qilish\nVideolarni qidiruvda chiqarish\nKanaldan daromad olish yo'llari", "Blog ochmoqchi bo'lganlar\nBiznesini YouTube orqali rivojlantirmoqchilar");
 console.log('Demo tayyor:', studentIds.length, "o'quvchi");
 await sql.end();

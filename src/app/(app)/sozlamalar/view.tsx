@@ -2,9 +2,9 @@
 import { Download, Database, ShieldCheck } from 'lucide-react';
 import { Card, CardHeader, Field } from '@/components/ui';
 import { ActionForm } from '@/components/action-form';
-import { saveSettings, changeMyPassword } from '@/app/actions/staff';
+import { saveSettings, changeMyPassword, saveAcademySettings } from '@/app/actions/staff';
 import { saveBranch, toggleBranch } from '@/app/actions/branch';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Building2, Pencil, Plus, Power } from 'lucide-react';
 import { Badge, Button } from '@/components/ui';
 import { Modal } from '@/components/modal';
@@ -25,12 +25,15 @@ const CSV = [
 
 type Br = { id: number; name: string; address: string | null; phone: string | null; active: boolean; students: number; groups: number };
 
-export function SettingsView({ s, counts, branches }: { branches: Br[]; s: { centerName: string; phone: string | null; address: string | null; paymentDueDay: number; salaryDay: number; reservePercent: number }; counts: Record<string, number> }) {
+type Academy = { payCard: string | null; payCardHolder: string | null; telegram: string | null; instagram: string | null; academyTagline: string | null };
+
+export function SettingsView({ s, counts, branches, academy, integrations }: { academy: Academy; integrations: { click: boolean; payme: boolean; telegram: boolean }; branches: Br[]; s: { centerName: string; phone: string | null; address: string | null; paymentDueDay: number; salaryDay: number; reservePercent: number }; counts: Record<string, number> }) {
   return (
     <>
       <PageHeader title="Sozlamalar" sub="Markaz ma'lumotlari, to'lov qoidalari va ma'lumotlar zaxirasi" />
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="space-y-5">
+        <AcademyCard a={academy} integrations={integrations} />
         <BranchesCard branches={branches} />
         <Card>
           <CardHeader title="Markaz va qoidalar" />
@@ -163,6 +166,53 @@ function BranchesCard({ branches }: { branches: Br[] }) {
           </ActionForm>
         )}
       </Modal>
+    </Card>
+  );
+}
+
+function AcademyCard({ a, integrations }: { a: Academy; integrations: { click: boolean; payme: boolean; telegram: boolean } }) {
+  const [origin, setOrigin] = useState('');
+  useEffect(() => setOrigin(window.location.origin), []);
+  const rows = [
+    { k: 'Click', on: integrations.click, hint: `Prepare va Complete URL: ${origin}/api/click`, env: 'CLICK_SERVICE_ID, CLICK_MERCHANT_ID, CLICK_SECRET_KEY' },
+    { k: 'Payme', on: integrations.payme, hint: `Endpoint: ${origin}/api/payme, hisob maydoni: order_id`, env: 'PAYME_MERCHANT_ID, PAYME_KEY' },
+    { k: 'Telegram xabarlar', on: integrations.telegram, hint: 'Yangi buyurtma va to\'lov haqida xabar', env: 'TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID' },
+  ];
+  return (
+    <Card>
+      <CardHeader title="Akademiya sayti va to'lov" sub="Onlayn kurslar sotiladigan sayt: /akademiya" action={<a href="/akademiya" target="_blank" rel="noreferrer" className="text-[13px] font-bold text-brand hover:underline">Saytni ochish</a>} />
+      <div className="space-y-5 px-5 pb-5">
+        <ActionForm action={saveAcademySettings}>
+          <Field label="Sayt shiori" hint="Bosh sahifada sarlavha ostida chiqadi">
+            <input name="academyTagline" defaultValue={a.academyTagline ?? ''} className="field" placeholder="Qisqa video darslar va amaliy topshiriqlar" />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Karta raqami" hint="Karta orqali to'lov uchun ko'rsatiladi">
+              <input name="payCard" defaultValue={a.payCard ?? ''} inputMode="numeric" className="field font-mono tracking-wider" placeholder="8600 0000 0000 0000" />
+            </Field>
+            <Field label="Karta egasi">
+              <input name="payCardHolder" defaultValue={a.payCardHolder ?? ''} className="field" />
+            </Field>
+            <Field label="Telegram">
+              <input name="telegram" defaultValue={a.telegram ?? ''} className="field" placeholder="@unitedit" />
+            </Field>
+            <Field label="Instagram">
+              <input name="instagram" defaultValue={a.instagram ?? ''} className="field" placeholder="@unitedit" />
+            </Field>
+          </div>
+        </ActionForm>
+        <div className="rounded-xl border border-line">
+          {rows.map((r) => (
+            <div key={r.k} className="flex items-start gap-3 border-b border-line px-4 py-3 last:border-0">
+              <Badge tone={r.on ? 'good' : 'neutral'}>{r.on ? 'Ulangan' : 'Ulanmagan'}</Badge>
+              <div className="min-w-0 text-[13px]">
+                <div className="font-bold">{r.k}</div>
+                <div className="break-all text-fg-muted">{r.on ? r.hint : `Vercel'da ${r.env} o'zgaruvchilarini qo'shing. ${r.hint}`}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </Card>
   );
 }

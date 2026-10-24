@@ -11,6 +11,7 @@ const COLORS = ['#008A70', '#3D6FD1', '#C2862A', '#B5487A', '#7A5BC7'];
 export type CourseData = {
   id: number; title: string; slug: string; subtitle: string | null; description: string | null; level: string; price: number;
   oldPrice: number | null; coverUrl: string | null; color: string; status: string; accessDays: number | null;
+  category?: string; outcomes?: string | null; audience?: string | null;
 };
 
 export function CourseForm({ c, onDone, compact }: { c?: CourseData; onDone?: () => void; compact?: boolean }) {
@@ -31,13 +32,35 @@ export function CourseForm({ c, onDone, compact }: { c?: CourseData; onDone?: ()
       <Field label="Kurs nomi">
         <input name="title" defaultValue={c?.title} className="field" placeholder="Masalan: ChatGPT bilan ishlash. 0 dan professionalgacha" required />
       </Field>
+      <Field label="Yo'nalish">
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            ['ai', "Sun'iy intellekt"],
+            ['youtube', 'YouTube'],
+            ['boshqa', 'Boshqa'],
+          ].map(([k, l]) => (
+            <label key={k} className="cursor-pointer">
+              <input type="radio" name="category" value={k} defaultChecked={(c?.category ?? 'ai') === k} className="peer sr-only" />
+              <span className="flex h-10 items-center justify-center rounded-field border border-line-strong text-[13px] font-semibold peer-checked:border-brand peer-checked:bg-brand-soft peer-checked:text-brand-strong">{l}</span>
+            </label>
+          ))}
+        </div>
+      </Field>
       <Field label="Qisqa tavsif" hint="Kurs sahifasida nom ostida chiqadi">
         <input name="subtitle" defaultValue={c?.subtitle ?? ''} className="field" placeholder="Ishda va o'qishda AI dan foydalanishni 4 haftada o'rganing" />
       </Field>
       {!compact && (
-        <Field label="To'liq tavsif" hint="Kim uchun, nimani o'rganadi, natija">
-          <textarea name="description" defaultValue={c?.description ?? ''} rows={5} className="field" />
-        </Field>
+        <>
+          <Field label="Nimalarni o'rganadi" hint="Har bir natijani yangi qatorga yozing">
+            <textarea name="outcomes" defaultValue={c?.outcomes ?? ''} rows={5} className="field" placeholder={"ChatGPT'da aniq prompt yozish\nAI yordamida taqdimot tayyorlash"} />
+          </Field>
+          <Field label="Kimlar uchun" hint="Har birini yangi qatorga yozing">
+            <textarea name="audience" defaultValue={c?.audience ?? ''} rows={3} className="field" placeholder={"Talabalar va maktab o'quvchilari\nIshida vaqt tejamoqchi bo'lganlar"} />
+          </Field>
+          <Field label="Kurs haqida">
+            <textarea name="description" defaultValue={c?.description ?? ''} rows={5} className="field" />
+          </Field>
+        </>
       )}
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Narx">

@@ -73,6 +73,9 @@ export function CourseEditor({
         </div>
         {canEdit && (
           <div className="flex flex-wrap gap-2">
+            <a href={`/akademiya/kurs/${course.slug}`} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-field border border-line-strong bg-white px-4 text-sm font-semibold hover:bg-canvas">
+              <ExternalLink className="h-4 w-4" /> Saytda ko&apos;rish
+            </a>
             <Button variant="secondary" onClick={() => setSettings(true)}>
               <Pencil className="h-4 w-4" /> Sozlamalar
             </Button>

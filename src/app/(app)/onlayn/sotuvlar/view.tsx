@@ -126,6 +126,7 @@ export function SalesView({ month, holat, orders, courses, learners, openNew, pr
                     <td className="td text-[13px]">{ORDER_METHODS[o.method] ?? o.method}</td>
                     <td className="td">
                       <Badge tone={ORDER_STATUS[o.status]?.tone ?? 'neutral'}>{ORDER_STATUS[o.status]?.label ?? o.status}</Badge>
+                      {o.status === 'kutilmoqda' && o.note?.startsWith("O'quvchi to'laganini bildirdi") && <div className="mt-1 max-w-[220px] text-xs font-semibold text-warn">{o.note}</div>}
                     </td>
                     <td className="td text-right">
                       <div className="font-bold tnum">{money(o.amount)}</div>

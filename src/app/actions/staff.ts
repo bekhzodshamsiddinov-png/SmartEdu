@@ -77,3 +77,21 @@ export async function saveSettings(fd: FormData) {
     return { message: 'Sozlamalar saqlandi' };
   });
 }
+
+export async function saveAcademySettings(fd: FormData) {
+  return run(async () => {
+    await assertSection('settings');
+    const card = (str(fd, 'payCard') ?? '').replace(/\D/g, '');
+    if (card && card.length !== 16) throw new Error("Karta raqami 16 ta raqamdan iborat bo'lsin.");
+    const v = {
+      payCard: card || null,
+      payCardHolder: str(fd, 'payCardHolder'),
+      telegram: str(fd, 'telegram')?.replace(/^https?:\/\/t\.me\//, '').replace(/^@/, '') ?? null,
+      instagram: str(fd, 'instagram')?.replace(/^https?:\/\/(www\.)?instagram\.com\//, '').replace(/^@/, '').replace(/\/$/, '') ?? null,
+      academyTagline: str(fd, 'academyTagline'),
+      updatedAt: new Date(),
+    };
+    await db.insert(settings).values({ id: 1, ...v }).onConflictDoUpdate({ target: settings.id, set: v });
+    return { message: 'Akademiya sozlamalari saqlandi' };
+  });
+}

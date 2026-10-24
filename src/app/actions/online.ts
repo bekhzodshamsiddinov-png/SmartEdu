@@ -38,6 +38,9 @@ export async function saveOnlineCourse(id: number | null, fd: FormData) {
       oldPrice: int(fd, 'oldPrice'),
       coverUrl: str(fd, 'coverUrl'),
       color: str(fd, 'color') || '#008A70',
+      category: ['ai', 'youtube', 'boshqa'].includes(str(fd, 'category') ?? '') ? str(fd, 'category')! : 'ai',
+      ...(fd.has('outcomes') ? { outcomes: str(fd, 'outcomes') } : {}),
+      ...(fd.has('audience') ? { audience: str(fd, 'audience') } : {}),
       accessDays: int(fd, 'accessDays'),
       updatedAt: new Date(),
     };
@@ -322,5 +325,16 @@ export async function togglePromo(id: number) {
     if (!p) throw new Error('Topilmadi.');
     await db.update(promoCodes).set({ active: !p.active }).where(eq(promoCodes.id, id));
     return { message: p.active ? "Promokod o'chirildi" : 'Promokod yoqildi' };
+  });
+}
+
+export async function setLearnerPassword(id: number, fd: FormData) {
+  return run(async () => {
+    await assertSection('online');
+    const pw = req(fd, 'password', 'Parol');
+    if (pw.length < 6) throw new Error("Parol kamida 6 belgi bo'lsin.");
+    const bcrypt = (await import('bcryptjs')).default;
+    await db.update(learners).set({ passwordHash: await bcrypt.hash(pw, 10) }).where(eq(learners.id, id));
+    return { message: "Parol o'rnatildi. Uni o'quvchiga yuboring." };
   });
 }

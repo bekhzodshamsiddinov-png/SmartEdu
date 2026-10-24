@@ -54,6 +54,9 @@ export default async function OnlineHome() {
         sub="AI kurslaringiz, sotuvlar va onlayn o'quvchilar"
         actions={
           <>
+            <a href="/akademiya" target="_blank" rel="noreferrer" className="inline-flex h-10 items-center rounded-field border border-line-strong bg-white px-4 text-sm font-semibold hover:bg-canvas">
+              Akademiya sayti
+            </a>
             <LinkButton variant="secondary" href="/onlayn/sotuvlar?yangi=1">
               <Plus className="h-4 w-4" /> Sotuv qo&apos;shish
             </LinkButton>

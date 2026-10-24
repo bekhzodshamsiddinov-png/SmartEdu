@@ -8,6 +8,7 @@ import {
   date,
   jsonb,
   pgEnum,
+  bigint,
   uniqueIndex,
   index,
 } from 'drizzle-orm/pg-core';
@@ -45,6 +46,11 @@ export const settings = pgTable('settings', {
   paymentDueDay: integer('payment_due_day').notNull().default(5),
   salaryDay: integer('salary_day').notNull().default(10),
   reservePercent: integer('reserve_percent').notNull().default(10),
+  payCard: text('pay_card'),
+  payCardHolder: text('pay_card_holder'),
+  telegram: text('telegram'),
+  instagram: text('instagram'),
+  academyTagline: text('academy_tagline'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
 
@@ -386,6 +392,9 @@ export const onlineCourses = pgTable('online_courses', {
   coverUrl: text('cover_url'),
   color: text('color').notNull().default('#008A70'),
   status: text('status').notNull().default('qoralama'),
+  category: text('category').notNull().default('ai'),
+  outcomes: text('outcomes'),
+  audience: text('audience'),
   accessDays: integer('access_days'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -436,6 +445,8 @@ export const learners = pgTable('learners', {
   city: text('city'),
   source: text('source'),
   note: text('note'),
+  passwordHash: text('password_hash'),
+  lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -470,6 +481,8 @@ export const courseOrders = pgTable(
     paidAt: date('paid_at'),
     accessUntil: date('access_until'),
     note: text('note'),
+    provider: text('provider'),
+    providerTx: text('provider_tx'),
     createdById: integer('created_by_id').references(() => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -490,3 +503,19 @@ export const lessonProgress = pgTable(
   },
   (t) => [uniqueIndex('progress_uq').on(t.learnerId, t.lessonId)],
 );
+
+/** Payme Merchant API tranzaksiyalari */
+export const paymeTransactions = pgTable('payme_transactions', {
+  id: serial('id').primaryKey(),
+  paymeId: text('payme_id').notNull().unique(),
+  orderId: integer('order_id')
+    .notNull()
+    .references(() => courseOrders.id),
+  amount: bigint('amount', { mode: 'number' }).notNull(),
+  state: integer('state').notNull().default(1),
+  reason: integer('reason'),
+  paymeTime: bigint('payme_time', { mode: 'number' }).notNull(),
+  createTime: bigint('create_time', { mode: 'number' }).notNull(),
+  performTime: bigint('perform_time', { mode: 'number' }).notNull().default(0),
+  cancelTime: bigint('cancel_time', { mode: 'number' }).notNull().default(0),
+});
