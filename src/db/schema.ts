@@ -198,6 +198,7 @@ export const payments = pgTable(
       .notNull()
       .references(() => students.id, { onDelete: 'cascade' }),
     enrollmentId: integer('enrollment_id').references(() => enrollments.id, { onDelete: 'set null' }),
+    branchId: integer('branch_id').references(() => branches.id, { onDelete: 'set null' }),
     amount: integer('amount').notNull(),
     method: payMethodEnum('method').notNull().default('naqd'),
     forMonth: text('for_month'),

@@ -6,11 +6,12 @@ import { assertSection } from '@/lib/auth';
 import { run, str, req, int } from '@/lib/action';
 import { today } from '@/lib/dates';
 import { RECON_ROWS } from '@/lib/finance';
-import { branchForNew } from '@/lib/branch';
+import { assertBranch, resolveBranch } from '@/lib/branch';
 
 export async function saveTransaction(id: number | null, fd: FormData) {
   return run(async () => {
     const u = await assertSection('finance');
+    await assertBranch('transaction', id);
     const amount = int(fd, 'amount');
     if (!amount || amount <= 0) throw new Error('Summani kiriting.');
     const type = req(fd, 'type', 'Turi') as 'kirim' | 'chiqim';
@@ -24,7 +25,7 @@ export async function saveTransaction(id: number | null, fd: FormData) {
       document: str(fd, 'document'),
       note: str(fd, 'note'),
       createdById: u.id,
-      branchId: int(fd, 'branchId') ?? (id ? undefined : await branchForNew()),
+      branchId: fd.has('branchId') || !id ? await resolveBranch(int(fd, 'branchId')) : undefined,
     };
     if (type === 'chiqim' && !v.document && v.method !== 'naqd') {
       // hujjat raqami tavsiya etiladi, lekin majburiy emas

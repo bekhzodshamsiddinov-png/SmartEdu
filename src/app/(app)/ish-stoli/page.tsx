@@ -31,7 +31,7 @@ export default async function DeskPage() {
       select student_id from (
         select student_id, status, row_number() over (partition by student_id order by date desc) rn from attendance
       ) x where rn <= 2 group by student_id having count(*) = 2 and count(*) filter (where status = 'kelmadi') = 2`),
-    db.execute<{ c: number; s: string; cash: string }>(sql`select count(*)::int c, coalesce(sum(amount),0) s, coalesce(sum(amount) filter (where method = 'naqd'),0) cash from payments p where p.paid_at = ${t} ${B ? sql`and exists (select 1 from students s where s.id = p.student_id and s.branch_id = ${B})` : sql``}`),
+    db.execute<{ c: number; s: string; cash: string }>(sql`select count(*)::int c, coalesce(sum(amount),0) s, coalesce(sum(amount) filter (where method = 'naqd'),0) cash from payments p where p.paid_at = ${t} ${B ? sql`and p.branch_id = ${B}` : sql``}`),
     db.select({ id: tasks.id, title: tasks.title, dueDate: tasks.dueDate, priority: tasks.priority, status: tasks.status }).from(tasks).where(and(eq(tasks.assigneeId, user.id), ne(tasks.status, 'bajarildi'))).orderBy(asc(tasks.dueDate)).limit(8),
     db.select({ id: staffReports.id, done: staffReports.done }).from(staffReports).where(and(eq(staffReports.userId, user.id), eq(staffReports.date, t))).orderBy(desc(staffReports.id)).limit(1),
     db.execute<{ entity_id: number }>(sql`select distinct entity_id from notes where entity_type = 'student' and kind = 'qongiroq' and text like 'To''lov%' and created_at >= now() - interval '7 days'`),

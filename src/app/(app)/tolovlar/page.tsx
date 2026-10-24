@@ -22,7 +22,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
       .from(payments)
       .innerJoin(students, eq(students.id, payments.studentId))
       .leftJoin(users, eq(users.id, payments.receivedById))
-      .where(sql`${payments.paidAt} between ${monthStart(month)} and ${monthEnd(month)} ${B ? sql`and ${students.branchId} = ${B}` : sql``}`)
+      .where(sql`${payments.paidAt} between ${monthStart(month)} and ${monthEnd(month)} ${B ? sql`and ${payments.branchId} = ${B}` : sql``}`)
       .orderBy(desc(payments.paidAt), desc(payments.id)),
     db.select({ id: students.id, name: students.fullName, phone: students.phone, parentPhone: students.parentPhone, parentName: students.parentName, status: students.status }).from(students).where(sql`${students.status} in ('faol','xavf','muzlatilgan') ${B ? sql`and ${students.branchId} = ${B}` : sql``}`).orderBy(students.fullName),
     getBalances(),

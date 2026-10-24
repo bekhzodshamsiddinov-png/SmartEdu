@@ -70,7 +70,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
   const pid = Number(sp.id);
   if (pid) {
     const s = all.find((x) => x.id === pid);
-    if (s && (!mine || rows.some((r) => r.id === pid))) {
+    if (s && rows.some((r) => r.id === pid)) {
       const [pays, att, grd, nts, res, attStat] = await Promise.all([
         db.select({ id: payments.id, amount: payments.amount, method: payments.method, paidAt: payments.paidAt, forMonth: payments.forMonth, note: payments.note, by: users.fullName }).from(payments).leftJoin(users, eq(users.id, payments.receivedById)).where(eq(payments.studentId, pid)).orderBy(desc(payments.paidAt), desc(payments.id)),
         db.select({ id: attendance.id, date: attendance.date, status: attendance.status, reason: attendance.reason, group: groups.name }).from(attendance).innerJoin(groups, eq(groups.id, attendance.groupId)).where(eq(attendance.studentId, pid)).orderBy(desc(attendance.date)).limit(60),

@@ -47,7 +47,7 @@ for (const g of groups) {
     const start = addDays(g.start_date, Math.floor(Math.random() * 10));
     const [s] = await sql`insert into students (branch_id, full_name, phone, parent_name, parent_phone, joined_at, source, school) values (${g.branch_id}, ${name}, ${'99890' + String(1000000 + n * 7919).slice(0, 7)}, ${'Ota-onasi'}, ${'99893' + String(2000000 + n * 3571).slice(0, 7)}, ${start}, ${rnd(['Instagram', 'Tavsiya', 'Target', 'Ofisga keldi'])}, ${rnd(['12-maktab', '5-maktab', 'Litsey', '21-maktab'])}) returning id`;
     const [e] = await sql`insert into enrollments (student_id, group_id, monthly_fee, start_date) values (${s.id}, ${g.id}, ${price[g.course_id]}, ${start}) returning id`;
-    studentIds.push({ id: s.id, g: g.id, e: e.id, fee: price[g.course_id], start });
+    studentIds.push({ id: s.id, g: g.id, e: e.id, fee: price[g.course_id], start, b: g.branch_id });
   }
 }
 // payments: most paid, some debtors
@@ -57,7 +57,7 @@ for (const s of studentIds) {
   for (let m = 0; m < paidMonths; m++) {
     const d = addDays(s.start, m * 30 + Math.floor(Math.random() * 5));
     if (d > today) continue;
-    await sql`insert into payments (student_id, enrollment_id, amount, method, for_month, paid_at, received_by_id) values (${s.id}, ${s.e}, ${s.fee}, ${rnd(['naqd', 'click', 'payme', 'karta', 'naqd'])}, ${d.slice(0, 7)}, ${d}, ${admin})`;
+    await sql`insert into payments (branch_id, student_id, enrollment_id, amount, method, for_month, paid_at, received_by_id) values (${s.b}, ${s.id}, ${s.e}, ${s.fee}, ${rnd(['naqd', 'click', 'payme', 'karta', 'naqd'])}, ${d.slice(0, 7)}, ${d}, ${admin})`;
   }
 }
 // attendance last 21 days

@@ -44,7 +44,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     groupOptions(scope.id),
   ]);
   const pid = Number(sp.id);
-  const history = pid
+  const history = pid && rows.some((r) => r.id === pid)
     ? await db
         .select({ id: notes.id, kind: notes.kind, text: notes.text, createdAt: notes.createdAt, by: users.fullName })
         .from(notes)

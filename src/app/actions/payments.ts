@@ -5,12 +5,16 @@ import { payments, enrollments, notes } from '@/db/schema';
 import { assertSection } from '@/lib/auth';
 import { run, str, int } from '@/lib/action';
 import { today } from '@/lib/dates';
+import { assertBranch } from '@/lib/branch';
+import { students } from '@/db/schema';
 
 export async function addPayment(fd: FormData) {
   return run(async () => {
     const u = await assertSection('payments');
     const studentId = int(fd, 'studentId');
     if (!studentId) throw new Error("O'quvchini tanlang.");
+    await assertBranch('student', studentId);
+    const [st] = await db.select({ b: students.branchId }).from(students).where(eq(students.id, studentId));
     const amount = int(fd, 'amount');
     if (!amount || amount <= 0) throw new Error("To'lov summasini kiriting.");
     let enrollmentId = int(fd, 'enrollmentId');
@@ -28,6 +32,7 @@ export async function addPayment(fd: FormData) {
       paidAt: str(fd, 'paidAt') || today(),
       note: str(fd, 'note'),
       receivedById: u.id,
+      branchId: st?.b ?? null,
     });
     return { message: "To'lov qabul qilindi" };
   });
@@ -45,6 +50,7 @@ export async function deletePayment(id: number) {
 export async function logReminder(studentId: number) {
   return run(async () => {
     const u = await assertSection('payments');
+    await assertBranch('student', studentId);
     await db.insert(notes).values({ entityType: 'student', entityId: studentId, kind: 'qongiroq', text: "To'lov bo'yicha eslatma berildi", authorId: u.id });
     return { message: 'Eslatma qayd etildi' };
   });

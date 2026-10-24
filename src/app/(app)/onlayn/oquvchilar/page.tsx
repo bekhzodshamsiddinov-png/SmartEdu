@@ -26,7 +26,7 @@ export default async function LearnersPage({ searchParams }: { searchParams: Pro
         db.execute<{ course: string; total: number; done: number; last: string | null }>(sql`
           select c.title course,
             (select count(*) from course_lessons cl where cl.course_id = c.id and cl.published)::int total,
-            (select count(*) from lesson_progress p join course_lessons cl on cl.id = p.lesson_id where cl.course_id = c.id and p.learner_id = ${id})::int done,
+            (select count(*) from lesson_progress p join course_lessons cl on cl.id = p.lesson_id where cl.course_id = c.id and cl.published and p.learner_id = ${id})::int done,
             (select max(p.completed_at)::date::text from lesson_progress p join course_lessons cl on cl.id = p.lesson_id where cl.course_id = c.id and p.learner_id = ${id}) last
           from online_courses c where c.id in (select course_id from course_orders where learner_id = ${id} and status = 'tolandi')`),
       ]);

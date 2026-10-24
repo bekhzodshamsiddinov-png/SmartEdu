@@ -10,7 +10,7 @@ const n = (v: unknown) => Number(v ?? 0);
 export async function incomeExpense(from: string, to: string, branch: number | null = null) {
   const [r] = await db.execute<{ pay: string; inc: string; exp: string; onl: string }>(sql`
     select
-      (select coalesce(sum(p.amount),0) from payments p join students s on s.id = p.student_id where p.paid_at between ${from} and ${to} ${andBranch('s.branch_id', branch)}) as pay,
+      (select coalesce(sum(p.amount),0) from payments p where p.paid_at between ${from} and ${to} ${andBranch('p.branch_id', branch)}) as pay,
       ${branch ? sql`0` : sql`(select coalesce(sum(amount),0) from course_orders where status = 'tolandi' and paid_at between ${from} and ${to})`} as onl,
       (select coalesce(sum(amount),0) from transactions where type='kirim' and date between ${from} and ${to} ${andBranch('branch_id', branch)}) as inc,
       (select coalesce(sum(amount),0) from transactions where type='chiqim' and date between ${from} and ${to} ${andBranch('branch_id', branch)}) as exp`);
@@ -24,7 +24,7 @@ export async function monthlySeries(lastMonth: string, count = 12, branch: numbe
   const from = monthStart(first);
   const to = monthEnd(lastMonth);
   const rows = await db.execute<{ m: string; kirim: string; xarajat: string }>(sql`
-    with p as (select to_char(p.paid_at,'YYYY-MM') m, sum(p.amount) s from payments p join students s on s.id = p.student_id where p.paid_at between ${from} and ${to} ${andBranch('s.branch_id', branch)} group by 1),
+    with p as (select to_char(p.paid_at,'YYYY-MM') m, sum(p.amount) s from payments p where p.paid_at between ${from} and ${to} ${andBranch('p.branch_id', branch)} group by 1),
          i as (select to_char(date,'YYYY-MM') m, sum(amount) s from transactions where type='kirim' and date between ${from} and ${to} ${andBranch('branch_id', branch)} group by 1),
          o as (select to_char(paid_at,'YYYY-MM') m, sum(amount) s from course_orders where status='tolandi' and paid_at between ${from} and ${to} ${branch ? sql`and false` : sql``} group by 1),
          e as (select to_char(date,'YYYY-MM') m, sum(amount) s from transactions where type='chiqim' and date between ${from} and ${to} ${andBranch('branch_id', branch)} group by 1),
@@ -83,11 +83,10 @@ export async function revenueByCourse(from: string, to: string, branch: number |
   return db.execute<{ id: number | null; name: string; color: string; s: string }>(sql`
     select c.id, coalesce(c.name,'Guruhsiz') name, coalesce(c.color,'#8C9A97') color, sum(p.amount) s
     from payments p
-    join students st on st.id = p.student_id
     left join enrollments e on e.id = p.enrollment_id
     left join groups g on g.id = e.group_id
     left join courses c on c.id = g.course_id
-    where p.paid_at between ${from} and ${to} ${andBranch('st.branch_id', branch)}
+    where p.paid_at between ${from} and ${to} ${andBranch('p.branch_id', branch)}
     group by c.id, c.name, c.color order by s desc`);
 }
 
@@ -114,7 +113,7 @@ export async function branchComparison(from: string, to: string) {
       (select count(*) from students s where s.branch_id = b.id and s.status in ('faol','xavf'))::int active,
       (select count(*) from students s where s.branch_id = b.id and s.joined_at between ${from} and ${to})::int joined,
       (select count(*) from students s where s.branch_id = b.id and s.left_at between ${from} and ${to})::int "left",
-      (select coalesce(sum(p.amount),0) from payments p join students s on s.id = p.student_id where s.branch_id = b.id and p.paid_at between ${from} and ${to}) tuition,
+      (select coalesce(sum(p.amount),0) from payments p where p.branch_id = b.id and p.paid_at between ${from} and ${to}) tuition,
       (select coalesce(sum(amount),0) from transactions t where t.branch_id = b.id and t.type = 'kirim' and t.date between ${from} and ${to}) other,
       (select coalesce(sum(amount),0) from transactions t where t.branch_id = b.id and t.type = 'chiqim' and t.date between ${from} and ${to}) expense,
       (select count(*) from groups g where g.branch_id = b.id and g.active)::int groups

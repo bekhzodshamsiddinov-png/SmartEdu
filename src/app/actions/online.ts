@@ -38,7 +38,6 @@ export async function saveOnlineCourse(id: number | null, fd: FormData) {
       oldPrice: int(fd, 'oldPrice'),
       coverUrl: str(fd, 'coverUrl'),
       color: str(fd, 'color') || '#008A70',
-      status: str(fd, 'status') || 'qoralama',
       accessDays: int(fd, 'accessDays'),
       updatedAt: new Date(),
     };
@@ -46,7 +45,7 @@ export async function saveOnlineCourse(id: number | null, fd: FormData) {
       await db.update(onlineCourses).set(v).where(eq(onlineCourses.id, id));
       return { id, message: 'Kurs saqlandi' };
     }
-    const [c] = await db.insert(onlineCourses).values(v).returning({ id: onlineCourses.id });
+    const [c] = await db.insert(onlineCourses).values({ ...v, status: 'qoralama' }).returning({ id: onlineCourses.id });
     await db.insert(courseModules).values({ courseId: c.id, title: '1-modul. Kirish', position: 0 });
     return { id: c.id, message: 'Kurs yaratildi' };
   });
@@ -188,6 +187,7 @@ async function priceFor(courseId: number, code: string | null) {
 
 export async function quotePrice(courseId: number, code: string) {
   try {
+    await assertSection('online');
     const r = await priceFor(courseId, code || null);
     return { ok: true as const, price: r.price, discount: r.discount, original: r.course.price };
   } catch (e) {
@@ -209,9 +209,11 @@ export async function createOrder(fd: FormData) {
     if (!l) [l] = await db.insert(learners).values({ fullName: name, phone, email: str(fd, 'email'), telegram: str(fd, 'telegram'), source: str(fd, 'source') }).returning();
     const code = str(fd, 'promoCode');
     const q = await priceFor(courseId, code);
+    const statusIn = str(fd, 'status') === 'kutilmoqda' ? 'kutilmoqda' : 'tolandi';
+    if (q.promo && statusIn === 'tolandi') await reservePromo(q.promo.id);
     const custom = int(fd, 'amount');
     const amount = custom !== null && custom !== q.course.price ? custom : q.price;
-    const status = str(fd, 'status') === 'kutilmoqda' ? 'kutilmoqda' : 'tolandi';
+    const status = statusIn;
     const paidAt = status === 'tolandi' ? str(fd, 'paidAt') || today() : null;
     await db.insert(courseOrders).values({
       learnerId: l.id,
@@ -226,10 +228,23 @@ export async function createOrder(fd: FormData) {
       note: str(fd, 'note'),
       createdById: u.id,
     });
-    if (q.promo) await db.update(promoCodes).set({ used: sql`${promoCodes.used} + 1` }).where(eq(promoCodes.id, q.promo.id));
     return { message: status === 'tolandi' ? "Sotuv qayd etildi, kursga ruxsat ochildi" : "Buyurtma qo'shildi, to'lov kutilmoqda" };
   });
 }
+
+async function reservePromo(promoId: number) {
+  const r = await db.execute<{ id: number }>(sql`
+    update promo_codes set used = used + 1
+    where id = ${promoId} and active and (max_uses is null or used < max_uses) returning id`);
+  if (!r.length) throw new Error('Promokod limiti tugagan yoki faol emas.');
+}
+
+async function releasePromo(code: string | null) {
+  if (!code) return;
+  await db.execute(sql`update promo_codes set used = greatest(0, used - 1) where code = ${code}`);
+}
+
+const TRANSITIONS: Record<string, string[]> = { kutilmoqda: ['tolandi', 'bekor'], tolandi: ['qaytarildi'], qaytarildi: [], bekor: [] };
 
 export async function setOrderStatus(id: number, status: 'tolandi' | 'qaytarildi' | 'bekor') {
   return run(async () => {
@@ -237,12 +252,18 @@ export async function setOrderStatus(id: number, status: 'tolandi' | 'qaytarildi
     if (status === 'qaytarildi' && u.role !== 'rahbar') throw new Error("Pulni qaytarishni faqat rahbar tasdiqlaydi.");
     const [o] = await db.select().from(courseOrders).where(eq(courseOrders.id, id));
     if (!o) throw new Error('Buyurtma topilmadi.');
+    if (!TRANSITIONS[o.status]?.includes(status)) throw new Error("Bu buyurtma holatini bunday o'zgartirib bo'lmaydi.");
     if (status === 'tolandi') {
+      if (o.promoCode) {
+        const [p] = await db.select({ id: promoCodes.id }).from(promoCodes).where(eq(promoCodes.code, o.promoCode));
+        if (p) await reservePromo(p.id);
+      }
       const [c] = await db.select().from(onlineCourses).where(eq(onlineCourses.id, o.courseId));
       const d = today();
       await db.update(courseOrders).set({ status, paidAt: d, accessUntil: c?.accessDays ? addDays(d, c.accessDays) : null }).where(eq(courseOrders.id, id));
       return { message: "To'landi, kursga ruxsat ochildi" };
     }
+    if (status === 'qaytarildi') await releasePromo(o.promoCode);
     await db.update(courseOrders).set({ status }).where(eq(courseOrders.id, id));
     return { message: status === 'qaytarildi' ? 'Pul qaytarildi, ruxsat yopildi' : 'Buyurtma bekor qilindi' };
   });

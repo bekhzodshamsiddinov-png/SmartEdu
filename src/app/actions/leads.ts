@@ -6,11 +6,12 @@ import { assertSection } from '@/lib/auth';
 import { run, str, req, int } from '@/lib/action';
 import { normalizePhone } from '@/lib/format';
 import { STAGE_INDEX } from '@/lib/constants';
-import { branchForNew } from '@/lib/branch';
+import { assertBranch, resolveBranch } from '@/lib/branch';
 
 export async function saveLead(id: number | null, fd: FormData) {
   return run(async () => {
     const u = await assertSection('leads');
+    await assertBranch('lead', id);
     const v = {
       fullName: req(fd, 'fullName', 'Ism'),
       phone: normalizePhone(req(fd, 'phone', 'Telefon')),
@@ -22,7 +23,7 @@ export async function saveLead(id: number | null, fd: FormData) {
       updatedAt: new Date(),
     };
     if (id) await db.update(leads).set(v).where(eq(leads.id, id));
-    else await db.insert(leads).values({ ...v, branchId: await branchForNew() });
+    else await db.insert(leads).values({ ...v, branchId: await resolveBranch(null) });
     return { message: id ? 'Lid yangilandi' : "Lid qo'shildi" };
   });
 }
@@ -30,6 +31,7 @@ export async function saveLead(id: number | null, fd: FormData) {
 export async function moveLead(id: number, stage: LeadStage, lostReason?: string) {
   return run(async () => {
     const u = await assertSection('leads');
+    await assertBranch('lead', id);
     const idx = STAGE_INDEX[stage];
     if (stage === 'rad_etdi' && !lostReason) throw new Error('Rad etish sababini yozing.');
     await db
@@ -50,6 +52,7 @@ export async function deleteLead(id: number) {
   return run(async () => {
     const u = await assertSection('leads');
     if (!['rahbar', 'admin'].includes(u.role)) throw new Error("Lidni rahbar yoki administrator o'chiradi.");
+    await assertBranch('lead', id);
     await db.delete(leads).where(eq(leads.id, id));
     return { message: "Lid o'chirildi" };
   });

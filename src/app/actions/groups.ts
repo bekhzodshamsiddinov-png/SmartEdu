@@ -5,7 +5,7 @@ import { groups, courses, enrollments, students } from '@/db/schema';
 import { assertSection } from '@/lib/auth';
 import { run, str, req, int, bool } from '@/lib/action';
 import { DAY_CODES } from '@/lib/dates';
-import { branchForNew } from '@/lib/branch';
+import { assertBranch, resolveBranch } from '@/lib/branch';
 
 function onlyManagers(role: string) {
   if (!['rahbar', 'admin'].includes(role)) throw new Error("Guruhlarni rahbar yoki administrator boshqaradi.");
@@ -21,6 +21,7 @@ export async function saveGroup(id: number | null, fd: FormData) {
   return run(async () => {
     const u = await assertSection('groups');
     onlyManagers(u.role);
+    await assertBranch('group', id);
     const courseId = int(fd, 'courseId');
     if (!courseId) throw new Error("Yo'nalishni tanlang.");
     const v = {
@@ -34,7 +35,7 @@ export async function saveGroup(id: number | null, fd: FormData) {
       room: str(fd, 'room'),
       capacity: int(fd, 'capacity') ?? 14,
       startDate: str(fd, 'startDate'),
-      branchId: int(fd, 'branchId') ?? (id ? undefined : await branchForNew()),
+      branchId: fd.has('branchId') || !id ? await resolveBranch(int(fd, 'branchId')) : undefined,
     };
     if (id) await db.update(groups).set(v).where(eq(groups.id, id));
     else await db.insert(groups).values(v);
@@ -46,6 +47,7 @@ export async function closeGroup(id: number) {
   return run(async () => {
     const u = await assertSection('groups');
     onlyManagers(u.role);
+    await assertBranch('group', id);
     await db.update(groups).set({ active: false }).where(eq(groups.id, id));
     return { message: 'Guruh yopildi' };
   });
@@ -55,6 +57,7 @@ export async function reopenGroup(id: number) {
   return run(async () => {
     const u = await assertSection('groups');
     onlyManagers(u.role);
+    await assertBranch('group', id);
     await db.update(groups).set({ active: true }).where(eq(groups.id, id));
     return { message: 'Guruh qayta ochildi' };
   });
@@ -84,6 +87,8 @@ export async function moveStudent(enrollmentId: number, fd: FormData) {
     onlyManagers(u.role);
     const groupId = int(fd, 'groupId');
     if (!groupId) throw new Error('Yangi guruhni tanlang.');
+    await assertBranch('enrollment', enrollmentId);
+    await assertBranch('group', groupId);
     const [e] = await db.select().from(enrollments).where(and(eq(enrollments.id, enrollmentId), isNull(enrollments.endDate)));
     if (!e) throw new Error('Yozuv topilmadi.');
     const d = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date());

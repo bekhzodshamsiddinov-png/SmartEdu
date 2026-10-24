@@ -53,11 +53,13 @@ export function AttendanceView({
   const [state, setState] = useState<Record<number, { status: St; reason: string }>>(initial);
   const [topic, setTopic] = useState(lesson?.topic ?? '');
   const [teacherStatus, setTeacherStatus] = useState(lesson?.teacherStatus ?? 'vaqtida');
+  const [teacherTouched, setTeacherTouched] = useState(false);
   const [call, setCall] = useState<(typeof absents)[number] | null>(null);
   useEffect(() => {
     setState(initial);
     setTopic(lesson?.topic ?? '');
     setTeacherStatus(lesson?.teacherStatus ?? 'vaqtida');
+    setTeacherTouched(false);
   }, [initial, lesson]);
 
   const nav = (g: number | null, d: string, t?: string) => {
@@ -78,7 +80,7 @@ export function AttendanceView({
     const missing = members.filter((m) => !state[m.id]);
     if (missing.length) return toast(`${missing.length} ta o'quvchi belgilanmagan`, 'err');
     start(async () => {
-      const r = await saveAttendance({ groupId: group.id, date, marks: members.map((m) => ({ studentId: m.id, status: state[m.id].status, reason: state[m.id].reason || null })), topic, teacherStatus });
+      const r = await saveAttendance({ groupId: group.id, date, marks: members.map((m) => ({ studentId: m.id, status: state[m.id].status, reason: state[m.id].reason || null })), topic, teacherStatus: canSetTeacher && teacherTouched ? teacherStatus : undefined });
       if (r.ok) {
         toast(absentCount ? `Davomat saqlandi. ${absentCount} ta kelmaganga qo'ng'iroq qiling.` : 'Davomat saqlandi');
         router.refresh();
@@ -240,7 +242,7 @@ export function AttendanceView({
                   {canSetTeacher && (
                     <label className="block">
                       <span className="label">O&apos;qituvchi</span>
-                      <select value={teacherStatus} onChange={(e) => setTeacherStatus(e.target.value)} className="field">
+                      <select value={teacherStatus} onChange={(e) => { setTeacherStatus(e.target.value); setTeacherTouched(true); }} className="field">
                         <option value="vaqtida">Vaqtida keldi</option>
                         <option value="kechikdi">Kechikdi</option>
                         <option value="otilmadi">Dars o&apos;tilmadi</option>

@@ -33,7 +33,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
     expensesByCategory(from, to, B),
     monthlySeries(month, 6, B),
     getSettings(),
-    db.execute<{ method: string; s: string }>(sql`select p.method::text, sum(p.amount) s from payments p join students s on s.id = p.student_id where p.paid_at between ${from} and ${to} ${B ? sql`and s.branch_id = ${B}` : sql``} group by 1`),
+    db.execute<{ method: string; s: string }>(sql`select p.method::text, sum(p.amount) s from payments p where p.paid_at between ${from} and ${to} ${B ? sql`and p.branch_id = ${B}` : sql``} group by 1`),
   ]);
   const [ieAll, catAll] = B ? await Promise.all([incomeExpense(from, to), expensesByCategory(from, to)]) : [ie, byCat];
   const system: Record<string, number> = { kirim: ieAll.income, oylik: 0, ijara: 0, kommunal: 0, marketing: 0, soliq: 0, boshqa: 0 };

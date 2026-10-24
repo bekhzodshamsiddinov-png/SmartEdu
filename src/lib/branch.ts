@@ -33,3 +33,38 @@ export async function branchForNew(): Promise<number | null> {
   const list = await allBranches();
   return list.find((b) => b.active)?.id ?? null;
 }
+
+/* ---------- Filial bo'yicha ruxsat tekshiruvi (server action'lar uchun) ---------- */
+
+/** Xodim bitta filialga bog'langan bo'lsa, shu filial id'si; aks holda null (cheklov yo'q) */
+export async function lockedBranch(): Promise<number | null> {
+  const u = await getCurrentUser();
+  return u && u.role !== 'rahbar' && u.branchId ? u.branchId : null;
+}
+
+type Kind = 'student' | 'group' | 'lead' | 'transaction' | 'attendance' | 'enrollment';
+
+const LOOKUP: Record<Kind, (id: number) => SQL> = {
+  student: (id) => sql`select branch_id b from students where id = ${id}`,
+  group: (id) => sql`select branch_id b from groups where id = ${id}`,
+  lead: (id) => sql`select branch_id b from leads where id = ${id}`,
+  transaction: (id) => sql`select branch_id b from transactions where id = ${id}`,
+  attendance: (id) => sql`select g.branch_id b from attendance a join groups g on g.id = a.group_id where a.id = ${id}`,
+  enrollment: (id) => sql`select s.branch_id b from enrollments e join students s on s.id = e.student_id where e.id = ${id}`,
+};
+
+/** Filialga bog'langan xodim boshqa filial yozuviga tegolmasin */
+export async function assertBranch(kind: Kind, id: number | null | undefined) {
+  const locked = await lockedBranch();
+  if (!locked || !id) return;
+  const rows = await db.execute<{ b: number | null }>(LOOKUP[kind](id));
+  if (!rows.length) throw new Error('Yozuv topilmadi.');
+  if (rows[0].b !== null && rows[0].b !== locked) throw new Error("Bu yozuv boshqa filialga tegishli.");
+}
+
+/** Yangi yozuv uchun filial: bog'langan xodimda doim o'z filiali, aks holda formadagi yoki tanlangan */
+export async function resolveBranch(formValue: number | null): Promise<number | null> {
+  const locked = await lockedBranch();
+  if (locked) return locked;
+  return formValue ?? (await branchForNew());
+}

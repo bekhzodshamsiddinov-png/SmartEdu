@@ -64,7 +64,7 @@ async function loadBase(date: string, branch: number | null = null) {
     db.execute<{ debtors: number; reminded: number }>(sql`
       with bal as (
         select s.id,
-          coalesce((select sum(amount) from payments p where p.student_id = s.id), 0)
+          coalesce((select sum(amount) from payments p where p.student_id = s.id and p.paid_at <= ${date}), 0)
           - coalesce((select sum(e.monthly_fee * greatest(0,
               (extract(year from least(coalesce(e.end_date, ${date}::date), ${date}::date)) * 12 + extract(month from least(coalesce(e.end_date, ${date}::date), ${date}::date)))
               - (extract(year from e.start_date) * 12 + extract(month from e.start_date)) + 1))

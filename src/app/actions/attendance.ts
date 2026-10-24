@@ -4,6 +4,7 @@ import { db } from '@/db';
 import { attendance, lessons, groups, notes } from '@/db/schema';
 import { assertSection } from '@/lib/auth';
 import { run } from '@/lib/action';
+import { assertBranch } from '@/lib/branch';
 
 type Mark = { studentId: number; status: 'keldi' | 'kelmadi' | 'kechikdi' | 'sababli'; reason?: string | null };
 
@@ -16,6 +17,7 @@ export async function saveAttendance(input: {
 }) {
   return run(async () => {
     const u = await assertSection('attendance');
+    await assertBranch('group', input.groupId);
     const [g] = await db.select().from(groups).where(eq(groups.id, input.groupId));
     if (!g) throw new Error('Guruh topilmadi.');
     if ((u.role === 'oqituvchi' || u.role === 'support') && g.teacherId !== u.id && g.supportId !== u.id)
@@ -58,6 +60,7 @@ export async function saveAttendance(input: {
 export async function markCalled(attendanceId: number, reason: string) {
   return run(async () => {
     const u = await assertSection('attendance');
+    await assertBranch('attendance', attendanceId);
     const [a] = await db.select().from(attendance).where(eq(attendance.id, attendanceId));
     if (!a) throw new Error('Yozuv topilmadi.');
     await db.update(attendance).set({ called: true, reason: reason || a.reason }).where(eq(attendance.id, attendanceId));
@@ -75,6 +78,7 @@ export async function markCalled(attendanceId: number, reason: string) {
 export async function logParentReport(groupId: number, text: string) {
   return run(async () => {
     const u = await assertSection('attendance');
+    await assertBranch('group', groupId);
     const list = await db.execute<{ student_id: number }>(sql`select student_id from enrollments where group_id = ${groupId} and active = true and end_date is null`);
     if (!list.length) throw new Error("Guruhda o'quvchi yo'q.");
     for (const r of list)
@@ -88,6 +92,7 @@ export async function setArrival(groupId: number, date: string, status: 'vaqtida
   return run(async () => {
     const u = await assertSection('attendance');
     if (u.role !== 'admin' && u.role !== 'rahbar') throw new Error("O'qituvchi kelishini administrator belgilaydi.");
+    await assertBranch('group', groupId);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("Sana noto'g'ri.");
     await db
       .insert(lessons)

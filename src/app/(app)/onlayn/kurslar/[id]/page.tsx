@@ -23,7 +23,7 @@ export default async function CoursePage({ params }: { params: Promise<{ id: str
         count(*) filter (where status = 'kutilmoqda')::int pending from course_orders where course_id = ${id}`),
     db.execute<{ id: number; name: string; phone: string; paid_at: string | null; done: number }>(sql`
       select l.id, l.full_name name, l.phone, o.paid_at::text,
-        (select count(*) from lesson_progress p join course_lessons cl on cl.id = p.lesson_id where p.learner_id = l.id and cl.course_id = ${id})::int done
+        (select count(*) from lesson_progress p join course_lessons cl on cl.id = p.lesson_id where p.learner_id = l.id and cl.course_id = ${id} and cl.published)::int done
       from course_orders o join learners l on l.id = o.learner_id where o.course_id = ${id} and o.status = 'tolandi' order by o.paid_at desc nulls last limit 8`),
   ]);
   return (
