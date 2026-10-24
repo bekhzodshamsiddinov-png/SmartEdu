@@ -355,3 +355,122 @@ export type Student = typeof students.$inferSelect;
 export type Lead = typeof leads.$inferSelect;
 export type LeadStage = (typeof leadStageEnum.enumValues)[number];
 export type StudentStatus = (typeof studentStatusEnum.enumValues)[number];
+
+/* ===================== Onlayn kurslar ===================== */
+
+export const onlineCourses = pgTable('online_courses', {
+  id: serial('id').primaryKey(),
+  title: text('title').notNull(),
+  slug: text('slug').notNull().unique(),
+  subtitle: text('subtitle'),
+  description: text('description'),
+  level: text('level').notNull().default('boshlangich'),
+  price: integer('price').notNull().default(0),
+  oldPrice: integer('old_price'),
+  coverUrl: text('cover_url'),
+  color: text('color').notNull().default('#008A70'),
+  status: text('status').notNull().default('qoralama'),
+  accessDays: integer('access_days'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const courseModules = pgTable(
+  'course_modules',
+  {
+    id: serial('id').primaryKey(),
+    courseId: integer('course_id')
+      .notNull()
+      .references(() => onlineCourses.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    position: integer('position').notNull().default(0),
+  },
+  (t) => [index('modules_course_idx').on(t.courseId)],
+);
+
+export const courseLessons = pgTable(
+  'course_lessons',
+  {
+    id: serial('id').primaryKey(),
+    moduleId: integer('module_id')
+      .notNull()
+      .references(() => courseModules.id, { onDelete: 'cascade' }),
+    courseId: integer('course_id')
+      .notNull()
+      .references(() => onlineCourses.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    kind: text('kind').notNull().default('video'),
+    videoUrl: text('video_url'),
+    durationMin: integer('duration_min'),
+    content: text('content'),
+    isFree: boolean('is_free').notNull().default(false),
+    published: boolean('published').notNull().default(true),
+    position: integer('position').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('lessons_module_idx').on(t.moduleId), index('lessons_course_idx').on(t.courseId)],
+);
+
+export const learners = pgTable('learners', {
+  id: serial('id').primaryKey(),
+  fullName: text('full_name').notNull(),
+  phone: text('phone').notNull().unique(),
+  email: text('email'),
+  telegram: text('telegram'),
+  city: text('city'),
+  source: text('source'),
+  note: text('note'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const promoCodes = pgTable('promo_codes', {
+  id: serial('id').primaryKey(),
+  code: text('code').notNull().unique(),
+  percent: integer('percent'),
+  amount: integer('amount'),
+  courseId: integer('course_id').references(() => onlineCourses.id, { onDelete: 'set null' }),
+  maxUses: integer('max_uses'),
+  used: integer('used').notNull().default(0),
+  validUntil: date('valid_until'),
+  active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const courseOrders = pgTable(
+  'course_orders',
+  {
+    id: serial('id').primaryKey(),
+    learnerId: integer('learner_id')
+      .notNull()
+      .references(() => learners.id, { onDelete: 'cascade' }),
+    courseId: integer('course_id')
+      .notNull()
+      .references(() => onlineCourses.id),
+    amount: integer('amount').notNull(),
+    originalPrice: integer('original_price').notNull(),
+    promoCode: text('promo_code'),
+    method: text('method').notNull().default('click'),
+    status: text('status').notNull().default('kutilmoqda'),
+    paidAt: date('paid_at'),
+    accessUntil: date('access_until'),
+    note: text('note'),
+    createdById: integer('created_by_id').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('orders_learner_idx').on(t.learnerId), index('orders_course_idx').on(t.courseId), index('orders_paid_idx').on(t.paidAt)],
+);
+
+export const lessonProgress = pgTable(
+  'lesson_progress',
+  {
+    id: serial('id').primaryKey(),
+    learnerId: integer('learner_id')
+      .notNull()
+      .references(() => learners.id, { onDelete: 'cascade' }),
+    lessonId: integer('lesson_id')
+      .notNull()
+      .references(() => courseLessons.id, { onDelete: 'cascade' }),
+    completedAt: timestamp('completed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('progress_uq').on(t.learnerId, t.lessonId)],
+);

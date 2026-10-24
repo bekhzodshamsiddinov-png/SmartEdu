@@ -18,7 +18,7 @@ export function MoneyBars({ data, height = 260 }: { data: Row[]; height?: number
           <BarChart data={data} barGap={2} barCategoryGap="28%" margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke="#E9EEEC" />
             <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: '#5E6E6B' }} dy={6} />
-            <YAxis tickLine={false} axisLine={false} width={56} tick={{ fontSize: 12, fill: '#8C9A97' }} tickFormatter={(v) => compactMoney(Number(v))} />
+            <YAxis tickLine={false} axisLine={false} width={66} tick={{ fontSize: 12, fill: '#8C9A97' }} tickFormatter={(v) => compactMoney(Number(v))} />
             <Tooltip
               cursor={{ fill: 'rgba(15,42,46,0.04)' }}
               content={({ active, payload, label }) =>

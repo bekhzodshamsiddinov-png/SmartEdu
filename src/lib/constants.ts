@@ -60,3 +60,18 @@ export const NOTE_KINDS: Record<string, string> = {
   ota_ona: 'Ota-onaga hisobot',
   uchrashuv: 'Uchrashuv',
 };
+
+export const COURSE_STATUS: Record<string, { label: string; tone: Tone }> = {
+  qoralama: { label: 'Qoralama', tone: 'neutral' },
+  sotuvda: { label: 'Sotuvda', tone: 'good' },
+  yopiq: { label: 'Yopiq', tone: 'bad' },
+};
+export const ORDER_STATUS: Record<string, { label: string; tone: Tone }> = {
+  kutilmoqda: { label: "To'lov kutilmoqda", tone: 'warn' },
+  tolandi: { label: "To'landi", tone: 'good' },
+  qaytarildi: { label: 'Qaytarildi', tone: 'bad' },
+  bekor: { label: 'Bekor qilingan', tone: 'neutral' },
+};
+export const LEVELS: Record<string, string> = { boshlangich: "Boshlang'ich", orta: "O'rta", yuqori: 'Yuqori' };
+export const LESSON_KINDS: Record<string, string> = { video: 'Video dars', matn: 'Matnli dars', test: 'Test', topshiriq: 'Amaliy topshiriq' };
+export const ORDER_METHODS: Record<string, string> = { click: 'Click', payme: 'Payme', uzum: 'Uzum', karta: 'Karta', naqd: 'Naqd', bank: "Bank o'tkazmasi" };

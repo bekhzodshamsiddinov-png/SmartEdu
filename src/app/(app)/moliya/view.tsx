@@ -48,7 +48,7 @@ export function FinanceView({
 }: {
   month: string;
   tx: Tx[];
-  ie: { tuition: number; otherIncome: number; income: number; expense: number; profit: number };
+  ie: { tuition: number; online: number; otherIncome: number; income: number; expense: number; profit: number };
   rec: { bank: Record<string, number>; tax: Record<string, number>; note: string | null } | null;
   system: Record<string, number>;
   byCourse: { name: string; color: string; s: number }[];
@@ -119,7 +119,7 @@ export function FinanceView({
       </div>
 
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Kirim" value={money(ie.income, false)} hint={`O'quvchilardan ${money(ie.tuition)}`} />
+        <Stat label="Kirim" value={money(ie.income, false)} hint={ie.online ? `Markaz ${money(ie.tuition)}, onlayn ${money(ie.online)}` : `O'quvchilardan ${money(ie.tuition)}`} />
         <Stat label="Xarajat" value={money(ie.expense, false)} hint="so'm" />
         <Stat label="Sof foyda" value={money(ie.profit, false)} tone={ie.profit >= 0 ? 'good' : 'bad'} hint={ie.income ? `Rentabellik ${Math.round((ie.profit / ie.income) * 100)}%` : "so'm"} />
         <Stat label={`Zaxiraga (${reservePercent}%)`} value={money(reserve, false)} hint="Alohida hisobga o'tkazing" />
@@ -172,6 +172,18 @@ export function FinanceView({
                   <td className="td text-right font-bold text-good tnum">+{money(ie.tuition)}</td>
                   <td className="td" />
                 </tr>
+                {ie.online > 0 && (
+                  <tr className="bg-brand-soft/40">
+                    <td className="td text-fg-muted">{fmtMonth(month)}</td>
+                    <td className="td font-bold">Onlayn kurslar sotuvi</td>
+                    <td className="td text-[13px] text-fg-muted">Onlayn kurslar bo&apos;limidan avtomatik</td>
+                    <td className="td">
+                      <Badge tone="brand">Avtomatik</Badge>
+                    </td>
+                    <td className="td text-right font-bold text-good tnum">+{money(ie.online)}</td>
+                    <td className="td" />
+                  </tr>
+                )}
                 {tx.map((t) => (
                   <tr key={t.id} className="hover:bg-canvas/60">
                     <td className="td text-fg-muted">{fmtShort(t.date)}</td>

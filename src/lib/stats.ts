@@ -6,14 +6,15 @@ import { addMonths, monthEnd, monthStart, MONTHS_SHORT } from './dates';
 const n = (v: unknown) => Number(v ?? 0);
 
 export async function incomeExpense(from: string, to: string) {
-  const [r] = await db.execute<{ pay: string; inc: string; exp: string }>(sql`
+  const [r] = await db.execute<{ pay: string; inc: string; exp: string; onl: string }>(sql`
     select
       (select coalesce(sum(amount),0) from payments where paid_at between ${from} and ${to}) as pay,
+      (select coalesce(sum(amount),0) from course_orders where status = 'tolandi' and paid_at between ${from} and ${to}) as onl,
       (select coalesce(sum(amount),0) from transactions where type='kirim' and date between ${from} and ${to}) as inc,
       (select coalesce(sum(amount),0) from transactions where type='chiqim' and date between ${from} and ${to}) as exp`);
-  const income = n(r.pay) + n(r.inc);
+  const income = n(r.pay) + n(r.inc) + n(r.onl);
   const expense = n(r.exp);
-  return { tuition: n(r.pay), otherIncome: n(r.inc), income, expense, profit: income - expense };
+  return { tuition: n(r.pay), online: n(r.onl), otherIncome: n(r.inc), income, expense, profit: income - expense };
 }
 
 export async function monthlySeries(lastMonth: string, count = 12) {
@@ -23,9 +24,11 @@ export async function monthlySeries(lastMonth: string, count = 12) {
   const rows = await db.execute<{ m: string; kirim: string; xarajat: string }>(sql`
     with p as (select to_char(paid_at,'YYYY-MM') m, sum(amount) s from payments where paid_at between ${from} and ${to} group by 1),
          i as (select to_char(date,'YYYY-MM') m, sum(amount) s from transactions where type='kirim' and date between ${from} and ${to} group by 1),
-         e as (select to_char(date,'YYYY-MM') m, sum(amount) s from transactions where type='chiqim' and date between ${from} and ${to} group by 1)
-    select coalesce(p.m,i.m,e.m) m, coalesce(p.s,0)+coalesce(i.s,0) kirim, coalesce(e.s,0) xarajat
-    from p full join i on i.m=p.m full join e on e.m=coalesce(p.m,i.m)`);
+         o as (select to_char(paid_at,'YYYY-MM') m, sum(amount) s from course_orders where status='tolandi' and paid_at between ${from} and ${to} group by 1),
+         e as (select to_char(date,'YYYY-MM') m, sum(amount) s from transactions where type='chiqim' and date between ${from} and ${to} group by 1),
+         ms as (select m from p union select m from i union select m from o union select m from e)
+    select ms.m, coalesce(p.s,0)+coalesce(i.s,0)+coalesce(o.s,0) kirim, coalesce(e.s,0) xarajat
+    from ms left join p on p.m=ms.m left join i on i.m=ms.m left join o on o.m=ms.m left join e on e.m=ms.m`);
   const map = new Map(rows.map((r) => [r.m, r]));
   const out: { month: string; label: string; kirim: number; xarajat: number }[] = [];
   for (let k = 0; k < count; k++) {
