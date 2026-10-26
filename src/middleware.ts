@@ -55,10 +55,6 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    {
-      source: '/((?!_next/static|_next/image|favicon|icon|api/health|.*\\.(?:png|svg|jpg|ico|webmanifest)$).*)',
-      missing: [{ type: 'header', key: 'next-router-prefetch' }],
-    },
-  ],
+  // Har bir so'rov (prefetch ham) himoyadan o'tadi
+  matcher: ['/((?!_next/static|_next/image|favicon|icon|api/health|.*\\.(?:png|svg|jpg|ico|webmanifest)$).*)'],
 };
