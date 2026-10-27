@@ -425,7 +425,7 @@ function ProfileDrawer({ p, groups, role, showMoney, onClose }: { p: Profile; gr
             <Pencil className="h-4 w-4" /> Tahrirlash
           </Button>
         )}
-        {(canManage || role === 'bugalter') && p.plans.length > 0 && current.length > 0 && (
+        {canManage && p.plans.length > 0 && current.length > 0 && (
           <Button size="sm" variant="secondary" onClick={() => setModal('sub')}>
             <Ticket className="h-4 w-4" /> Abonement
           </Button>

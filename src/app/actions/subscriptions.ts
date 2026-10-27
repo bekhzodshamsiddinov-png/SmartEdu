@@ -60,6 +60,7 @@ export async function savePlan(id: number | null, fd: FormData) {
 export async function sellSubscription(studentId: number, fd: FormData) {
   return run(async () => {
     const u = await assertSection('subscriptions');
+    if (u.role !== 'rahbar' && u.role !== 'admin') throw new Error('Abonementni rahbar yoki administrator rasmiylashtiradi.');
     await assertBranch('student', studentId);
     const planId = int(fd, 'planId');
     const enrollmentId = int(fd, 'enrollmentId');
@@ -75,36 +76,43 @@ export async function sellSubscription(studentId: number, fd: FormData) {
     if (p.courseId && p.courseId !== e.courseId) throw new Error("Bu paket boshqa yo'nalish uchun.");
     if (p.kind === 'dars' && e.billing !== 'dars') throw new Error('Darslik abonement faqat "dars bo\'yicha" hisoblanadigan guruhlar uchun.');
     const start = str(fd, 'startDate') || today();
-    if (!isDate(start) || start < addDays(today(), -31) || start > addDays(today(), 90)) throw new Error("Boshlanish sanasi noto'g'ri.");
+    // O'tgan sanadan boshlash (allaqachon hisoblangan oyni almashtirish) faqat rahbarga, 31 kungacha; boshqalarga 7 kungacha
+    const back = u.role === 'rahbar' ? 31 : 7;
+    if (!isDate(start) || start < addDays(today(), -back) || start > addDays(today(), 90)) throw new Error(`Boshlanish sanasi bugundan ${back} kun oldin va 90 kun keyin oralig'ida bo'lsin.`);
     const end = p.kind === 'oy' ? monthEnd(addMonths(start.slice(0, 7), p.months - 1)) : addDays(start, p.validDays - 1);
-    // Bir guruhda bir vaqtda ikkita abonement bo'lmasin
-    const [clash] = await db.execute<{ c: number }>(sql`
-      select count(*)::int c from student_subscriptions where enrollment_id = ${e.id} and status in ('faol','toxtatildi')
-        and start_date <= ${end} and end_date >= ${start}`);
-    if (clash.c) throw new Error('Bu guruhda shu davrga abonement allaqachon bor.');
     const pay = fd.get('pay') === 'on';
     const method = (str(fd, 'method') || 'naqd') as 'naqd' | 'click' | 'payme' | 'karta' | 'bank';
     if (pay && !['naqd', 'click', 'payme', 'karta', 'bank'].includes(method)) throw new Error("To'lov usuli noto'g'ri.");
     const [st] = await db.select({ b: students.branchId, name: students.fullName }).from(students).where(eq(students.id, studentId));
     const box = pay ? await cashboxForUser(u.id) : null;
     let subId = 0;
+    const chargeDate = start < today() ? start : today();
     await db.transaction(async (tx) => {
+      // Bir guruh yozuvi bo'yicha sotuvlar navbat bilan: ikki marta bosilsa ham ikkita abonement bo'lmaydi
+      await tx.execute(sql`select pg_advisory_xact_lock(7703, ${e.id})`);
+      const [clash] = await tx.execute<{ c: number }>(sql`
+        select count(*)::int c from student_subscriptions where enrollment_id = ${e.id} and status in ('faol','toxtatildi')
+          and start_date <= ${end} and end_date >= ${start}`);
+      if (clash.c) throw new Error('Bu guruhda shu davrga abonement allaqachon bor.');
       const [s] = await tx
         .insert(studentSubscriptions)
         .values({ studentId, planId: p.id, enrollmentId: e.id, name: p.name, kind: p.kind, startDate: start, endDate: end, lessonsTotal: p.kind === 'dars' ? p.lessons : 0, price: p.price, createdById: u.id })
         .returning({ id: studentSubscriptions.id });
       subId = s.id;
-      await tx.insert(charges).values({ studentId, enrollmentId: e.id, groupId: e.groupId, kind: 'abonement', amount: p.price, date: start, month: start.slice(0, 7), subscriptionId: s.id, note: p.name, createdById: u.id });
+      await tx.insert(charges).values({ studentId, enrollmentId: e.id, groupId: e.groupId, kind: 'abonement', amount: p.price, date: chargeDate, month: chargeDate.slice(0, 7), subscriptionId: s.id, note: p.name, createdById: u.id });
       if (p.kind === 'oy') {
         // Qoplangan oylarning alohida oylik va dars yechimlari olib tashlanadi — abonement ularning o'rnini bosadi
-        await tx.execute(sql`delete from charges where enrollment_id = ${e.id} and kind in ('oylik','dars') and month between ${start.slice(0, 7)} and ${end.slice(0, 7)}`);
+        await tx.execute(sql`delete from charges where enrollment_id = ${e.id} and kind = 'oylik' and month between ${start.slice(0, 7)} and ${end.slice(0, 7)}`);
+        await tx.execute(sql`delete from charges where enrollment_id = ${e.id} and kind = 'dars' and date >= ${start} and month <= ${end.slice(0, 7)}`);
       }
       if (pay)
         await tx.insert(payments).values({ studentId, enrollmentId: e.id, amount: p.price, method, forMonth: start.slice(0, 7), paidAt: today(), note: `Abonement: ${p.name}`, receivedById: u.id, branchId: st?.b ?? null, cashboxId: box!.id });
     });
+    // Parallel ishlagan oylik hisob qoplangan oyga yozuv qo'shgan bo'lsa — olib tashlanadi
+    if (p.kind === 'oy') await db.execute(sql`delete from charges where enrollment_id = ${e.id} and kind = 'oylik' and month between ${start.slice(0, 7)} and ${end.slice(0, 7)}`);
     // O'tgan sanadan boshlangan bo'lsa — shu davrdagi darslar qayta hisoblanadi
     if (e.billing === 'dars') {
-      const dates = await db.execute<{ d: string }>(sql`select distinct date::text d from attendance where group_id = ${e.groupId} and student_id = ${studentId} and date between ${start} and ${today()} order by 1`);
+      const dates = await db.execute<{ d: string }>(sql`select distinct date::text d from attendance where group_id = ${e.groupId} and student_id = ${studentId} and date between ${start.slice(0, 7) + '-01'} and ${today()} order by 1`);
       for (const r of dates) await syncLessonCharges(e.groupId, r.d, u.id);
     }
     await ensureMonthlyCharges(true);
@@ -138,8 +146,15 @@ export async function cancelSubscription(id: number, fd: FormData) {
     const mode = str(fd, 'mode') === 'toliq' ? 'toliq' : 'sanadan';
     let refund = 0;
     let newEnd = s.endDate;
-    if (mode === 'toliq') refund = s.price;
-    else {
+    let lessonsTotal = s.lessonsTotal;
+    const [usedNow] = await db.execute<{ c: number }>(sql`select count(*)::int c from charges where subscription_id = ${s.id} and kind = 'abonement_dars'`);
+    if (mode === 'toliq') {
+      // To'liq qaytarish faqat ishlatilmagan abonement uchun (aks holda o'tgan davr boshqa narxda qayta hisoblanib, hisob buziladi)
+      if (u.role !== 'rahbar') throw new Error("To'liq qaytarishni rahbar bajaradi.");
+      if ((s.kind === 'oy' && s.startDate <= today()) || (s.kind === 'dars' && usedNow.c > 0))
+        throw new Error("Abonement ishlatila boshlagan — «Tanlangan sanadan» bekor qiling.");
+      refund = s.price;
+    } else {
       const from = str(fd, 'from') || today();
       if (!isDate(from) || from < s.startDate || from > s.endDate) throw new Error('Sana abonement muddati ichida bo\'lsin.');
       if (s.kind === 'oy') {
@@ -148,16 +163,19 @@ export async function cancelSubscription(id: number, fd: FormData) {
         refund = Math.round((s.price * after_) / total);
         newEnd = monthEnd(from.slice(0, 7));
       } else {
+        // Darslik abonement faqat bugungacha bo'lgan sanadan to'xtatiladi; qolgan darslar qaytariladi va boshqa ishlatilmaydi
+        if (from > today()) throw new Error("Darslik abonementni bugundan keyingi sanadan to'xtatib bo'lmaydi.");
         const [r] = await db.execute<{ c: number }>(sql`select count(*)::int c from charges where subscription_id = ${s.id} and kind = 'abonement_dars' and date < ${from}`);
         const left = Math.max(0, s.lessonsTotal - r.c);
         refund = s.lessonsTotal ? Math.round((s.price * left) / s.lessonsTotal) : 0;
-        newEnd = addDays(from, -1) < s.startDate ? s.startDate : addDays(from, -1);
+        newEnd = addDays(from, -1);
+        lessonsTotal = r.c;
       }
     }
     const done = await db.transaction(async (tx) => {
       const r = await tx
         .update(studentSubscriptions)
-        .set({ status: mode === 'toliq' ? 'bekor' : 'toxtatildi', endDate: newEnd, refund, cancelledAt: new Date(), cancelledById: u.id, cancelReason: reason })
+        .set({ status: mode === 'toliq' ? 'bekor' : 'toxtatildi', endDate: newEnd, lessonsTotal, refund, cancelledAt: new Date(), cancelledById: u.id, cancelReason: reason })
         .where(and(eq(studentSubscriptions.id, id), eq(studentSubscriptions.status, 'faol')))
         .returning({ id: studentSubscriptions.id });
       if (!r.length) return false;
@@ -169,7 +187,7 @@ export async function cancelSubscription(id: number, fd: FormData) {
     // Qoplash olib tashlangan davr oddiy tartibda qayta hisoblanadi
     const [e] = await db.select({ groupId: enrollments.groupId, billing: groups.billing }).from(enrollments).innerJoin(groups, eq(groups.id, enrollments.groupId)).where(eq(enrollments.id, s.enrollmentId));
     if (e?.billing === 'dars') {
-      const dates = await db.execute<{ d: string }>(sql`select distinct date::text d from attendance where group_id = ${e.groupId} and student_id = ${s.studentId} and date between ${s.startDate} and ${today()}`);
+      const dates = await db.execute<{ d: string }>(sql`select distinct date::text d from attendance where group_id = ${e.groupId} and student_id = ${s.studentId} and date between ${s.startDate.slice(0, 7) + '-01'} and ${today()}`);
       for (const r of dates) await syncLessonCharges(e.groupId, r.d, u.id);
     }
     await ensureMonthlyCharges(true);

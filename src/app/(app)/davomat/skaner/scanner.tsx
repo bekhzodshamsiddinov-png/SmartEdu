@@ -111,7 +111,7 @@ export function Scanner({ group, members }: { group: { id: number; name: string;
                 <ScanLine className="h-8 w-8 text-[#C4F03C]" />
               </div>
               <p className="mt-4 text-lg font-extrabold">O&apos;quvchilar ilovadagi QR kodni ko&apos;rsatadi</p>
-              <p className="mt-1 text-sm text-white/60">Kod har 30 soniyada yangilanadi — skrinshot ishlamaydi.</p>
+              <p className="mt-1 text-sm text-white/60">Kod har 30 soniyada yangilanadi. Ekranda chiqqan ismni o'quvchining o'zi bilan solishtiring.</p>
               {err && <p className="mt-3 rounded-xl bg-[#D93A08]/20 px-3 py-2 text-sm text-[#FFC9A8]">{err}</p>}
               <button onClick={() => { setErr(null); setOn(true); }} className="mt-5 inline-flex h-12 items-center gap-2 rounded-full bg-[#D93A08] px-6 text-[15px] font-extrabold text-white">
                 <Camera className="h-5 w-5" /> Kamerani yoqish

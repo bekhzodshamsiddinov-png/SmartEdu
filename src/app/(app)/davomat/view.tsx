@@ -193,9 +193,10 @@ export function AttendanceView({
                 <div className="flex items-center gap-2">
                   {isMarked && <Badge tone="good">Saqlangan</Badge>}
                   {date === todayStr && group.today && (
-                    <Link href={`/davomat/skaner?guruh=${group.id}`} className="inline-flex h-8 items-center gap-1.5 rounded-field bg-ink px-3 text-[13px] font-bold text-white">
+                    // Oddiy havola: sahifa to'liq yuklanadi — kameraga ruxsat faqat skaner sahifasining o'z sarlavhasida
+                    <a href={`/davomat/skaner?guruh=${group.id}`} className="inline-flex h-8 items-center gap-1.5 rounded-field bg-ink px-3 text-[13px] font-bold text-white">
                       <QrCode className="h-4 w-4" /> QR skaner
-                    </Link>
+                    </a>
                   )}
                   <Button size="sm" variant="soft" onClick={() => setState(Object.fromEntries(members.map((m) => [m.id, { status: 'keldi' as St, reason: '', reasonId: null }])))}>
                     <CheckCheck className="h-4 w-4" /> Hammasi keldi

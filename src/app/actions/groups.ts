@@ -8,6 +8,7 @@ import { assertSection } from '@/lib/auth';
 import { run, str, req, int, bool } from '@/lib/action';
 import { DAY_CODES, addDays, groupHasLessonOn } from '@/lib/dates';
 import { scheduleConflict } from '@/lib/schedule';
+import { moveSubscriptions } from '@/lib/subscription-guard';
 import { assertBranch, assertStaffFor, resolveBranch } from '@/lib/branch';
 
 function onlyManagers(role: string) {
@@ -104,10 +105,13 @@ export async function moveStudent(enrollmentId: number, fd: FormData) {
     await assertBranch('group', groupId);
     const [e] = await db.select().from(enrollments).where(and(eq(enrollments.id, enrollmentId), isNull(enrollments.endDate)));
     if (!e) throw new Error('Yozuv topilmadi.');
+    // Amaldagi abonement yangi guruhga o'tadi (mos kelmasa — ko'chirish to'xtatiladi)
+    const subIds = await moveSubscriptions(enrollmentId, groupId);
     const d = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date());
     await db.update(enrollments).set({ active: false, endDate: d }).where(eq(enrollments.id, enrollmentId));
     const [ne] = await db.insert(enrollments).values({ studentId: e.studentId, groupId, monthlyFee: e.monthlyFee, startDate: d }).returning({ id: enrollments.id });
     // Shu oy avvalgi guruhda allaqachon hisoblangan bo'lsa, yangi guruhda ikkinchi marta yechilmaydi
+    if (subIds.length) await db.execute(sql`update student_subscriptions set enrollment_id = ${ne.id} where id in (${sql.join(subIds.map((x) => sql`${x}`), sql`, `)})`);
     const [already] = await db.execute<{ c: number }>(sql`select count(*)::int c from charges where enrollment_id = ${enrollmentId} and kind = 'oylik' and month = ${d.slice(0, 7)}`);
     if (already.c) {
       const [ng] = await db.select({ billing: groups.billing }).from(groups).where(eq(groups.id, groupId));

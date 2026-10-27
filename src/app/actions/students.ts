@@ -9,6 +9,7 @@ import { today } from '@/lib/dates';
 import { assertBranch, resolveBranch } from '@/lib/branch';
 import { audit } from '@/lib/security';
 import { ensureMonthlyCharges, syncCurrentMonthFee } from '@/lib/billing';
+import { assertNoActiveSubscription } from '@/lib/subscription-guard';
 
 async function feeFor(groupId: number) {
   const [g] = await db
@@ -130,6 +131,7 @@ export async function changeStatus(id: number, fd: FormData) {
       throw new Error("Bu holatni rahbar yoki administrator o'zgartiradi.");
     }
     const date = str(fd, 'date') || today();
+    if (status === 'ketgan' || status === 'bitirgan' || status === 'muzlatilgan') await assertNoActiveSubscription({ studentId: id });
     if (status === 'ketgan') {
       const reason = req(fd, 'leftReason', 'Ketish sababi');
       await db
@@ -207,6 +209,7 @@ export async function endEnrollment(enrollmentId: number) {
     const u = await assertSection('students');
     if (!canSetFee(u.role)) throw new Error("Guruhdan chiqarishni rahbar yoki administrator bajaradi.");
     await assertBranch('enrollment', enrollmentId);
+    await assertNoActiveSubscription({ enrollmentId });
     await db.update(enrollments).set({ active: false, endDate: today() }).where(eq(enrollments.id, enrollmentId));
     return { message: 'Guruhdan chiqarildi' };
   });

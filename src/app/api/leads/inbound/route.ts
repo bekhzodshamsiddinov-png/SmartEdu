@@ -19,6 +19,7 @@ export async function POST(req: Request) {
   const ts = Number(req.headers.get('x-smartedu-timestamp'));
   const sig = req.headers.get('x-smartedu-signature') ?? '';
   if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > 5 * 60 * 1000 || !/^[0-9a-f]{64}$/.test(sig)) return NextResponse.json({ ok: false }, { status: 401 });
+  if (Number(req.headers.get('content-length') ?? '0') > 4096) return NextResponse.json({ ok: false }, { status: 413 });
   const body = await req.text();
   if (body.length > 4096) return NextResponse.json({ ok: false }, { status: 413 });
   const expected = createHmac('sha256', secret).update(`${ts}.${body}`).digest();

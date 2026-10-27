@@ -58,7 +58,7 @@ export function QrLive({ sid, name, k, serverNow, windowMs }: { sid: number; nam
       </section>
       <div className="grid grid-cols-2 gap-2.5 text-[13px]">
         <div className="flex items-start gap-2 rounded-[20px] bg-white p-3">
-          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#1E8A4C]" /> Kod har 30 soniyada o&apos;zgaradi, skrinshot ishlamaydi
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#1E8A4C]" /> Kod har 30 soniyada o&apos;zgaradi, eski kod ishlamaydi
         </div>
         <div className="flex items-start gap-2 rounded-[20px] bg-white p-3">
           <Sun className="mt-0.5 h-4 w-4 shrink-0 text-[#D93A08]" /> Ekran yorqinligini oshiring — tezroq o&apos;qiladi

@@ -41,6 +41,10 @@ export async function leaveChild(id: number) {
 export async function telegramConnect(id: number): Promise<{ ok: boolean; url?: string; error?: string }> {
   const kids = await getChildren();
   if (!kids.some((k) => k.id === id)) return { ok: false, error: 'Ruxsat yo\'q.' };
+  const [cur] = await db.select({ chat: students.telegramChatId }).from(students).where(eq(students.id, id));
+  // Ulangan Telegramni boshqa qurilmadan jimgina almashtirib bo'lmaydi: avval botda /stop
+  if (cur?.chat) return { ok: false, error: "Telegram allaqachon ulangan. Almashtirish uchun avval botga /stop yuboring yoki administratorga murojaat qiling." };
+  if (await overLimit('tg-link', String(id), 5, 60)) return { ok: false, error: "Juda ko'p urinish. Birozdan keyin qayta urinib ko'ring." };
   const bot = await botInfo();
   if (!bot) return { ok: false, error: 'Telegram bot hali ulanmagan. Markaz administratoriga murojaat qiling.' };
   const code = randomBytes(12).toString('base64url');

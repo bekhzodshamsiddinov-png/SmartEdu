@@ -20,7 +20,7 @@ export default async function Image({ params }: { params: Promise<{ slug: string
         </div>
         <div style={{ fontSize: title.length > 40 ? 64 : 80, fontWeight: 800, lineHeight: 1.05, letterSpacing: -2, display: 'flex' }}>{title}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-          {c && c.price > 0 && <div style={{ display: 'flex', background: '#D93A08', color: 'white', borderRadius: 999, padding: '14px 28px', fontSize: 34, fontWeight: 800 }}>{fmt(c.price)} so&apos;m</div>}
+          {c && c.status !== 'qoralama' && c.price > 0 && <div style={{ display: 'flex', background: '#D93A08', color: 'white', borderRadius: 999, padding: '14px 28px', fontSize: 34, fontWeight: 800 }}>{fmt(c.price)} so&apos;m</div>}
           <div style={{ display: 'flex', fontSize: 30, color: '#5B6478' }}>Video darslar · amaliy topshiriqlar</div>
         </div>
       </div>
