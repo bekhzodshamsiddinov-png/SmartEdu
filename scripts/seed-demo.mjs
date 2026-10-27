@@ -1,7 +1,18 @@
 // Faqat sinov uchun: lokal bazani namunaviy ma'lumot bilan to'ldiradi
 import postgres from 'postgres';
 import bcrypt from 'bcryptjs';
-const sql = postgres(process.env.DATABASE_URL || 'postgres://postgres@localhost:5433/smartedu');
+// XAVFSIZLIK: bu skript barcha jadvallarni o'chiradi — faqat lokal bazada ishlaydi
+const SEED_URL = process.env.SEED_DATABASE_URL || 'postgres://postgres@localhost:5433/smartedu';
+const seedHost = new URL(SEED_URL).hostname;
+if (seedHost !== 'localhost' && seedHost !== '127.0.0.1') {
+  console.error('seed-demo faqat lokal bazada ishlaydi. Production bazaga ishlatib bo\'lmaydi.');
+  process.exit(1);
+}
+if (process.env.VERCEL) {
+  console.error('seed-demo Vercel ichida ishlamaydi.');
+  process.exit(1);
+}
+const sql = postgres(SEED_URL);
 const tz = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(d);
 const today = tz(new Date());
 const addDays = (s, n) => { const d = s instanceof Date ? new Date(s) : new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };

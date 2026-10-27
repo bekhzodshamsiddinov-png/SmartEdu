@@ -61,9 +61,17 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     .map(([id, b]) => ({ id, name: activeMap.get(id)!, debt: -b.balance, months: b.overdueMonths }))
     .sort((a, b) => b.debt - a.debt);
   const debtSum = debtors.reduce((s, d) => s + d.debt, 0);
-  const streakList = [...streak].filter((id) => activeMap.has(id)).map((id) => ({ id, name: activeMap.get(id)! }));
-
   const mine = user.role === 'oqituvchi' || user.role === 'support';
+  // O'qituvchi faqat o'z o'quvchilarini, o'quvchilar bo'limi yo'q rollar esa hech kimni ko'rmaydi
+  const ownIds = mine
+    ? new Set(
+        (await db.execute<{ id: number }>(sql`select distinct e.student_id id from enrollments e join groups g on g.id = e.group_id
+          where e.active and e.end_date is null and (g.teacher_id = ${user.id} or g.support_id = ${user.id})`)).map((r) => r.id),
+      )
+    : null;
+  const streakList = can(user.role, 'students')
+    ? [...streak].filter((id) => activeMap.has(id) && (!ownIds || ownIds.has(id))).map((id) => ({ id, name: activeMap.get(id)! }))
+    : [];
   const lessonsToday = todayGroups.filter((g) => groupHasLessonOn(g.days, t) && (!mine || g.teacherId === user.id));
   const lessonMap = new Map(todayLessons.map((l) => [l.groupId, l]));
   const attMap = new Map(todayAtt.map((a) => [a.group_id, a]));
@@ -192,7 +200,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
               count={streakList.length}
               href="/davomat?tab=kelmaganlar"
               items={streakList.slice(0, 4).map((d) => ({ href: `/oquvchilar?id=${d.id}`, left: d.name, right: "Qo'ng'iroq qiling" }))}
-              show
+              show={can(user.role, 'students')}
             />
             <AttentionGroup
               icon={<CalendarClock className="h-4 w-4" />}

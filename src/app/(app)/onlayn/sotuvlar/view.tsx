@@ -174,7 +174,7 @@ function OrderForm({ courses, learners, preset, onDone }: { courses: { id: numbe
   const [pending, start] = useTransition();
   const [ph, setPh] = useState('');
   const [name, setName] = useState('');
-  const [status, setStatus] = useState('tolandi');
+  const [status, setStatus] = useState('kutilmoqda');
   const course = courses.find((c) => c.id === courseId);
   const digits = ph.replace(/\D/g, '');
   const match = useMemo(() => (digits.length >= 4 ? learners.filter((l) => l.phone.includes(digits)).slice(0, 4) : []), [digits, learners]);

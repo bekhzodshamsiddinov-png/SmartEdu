@@ -2,7 +2,7 @@
 const nextConfig = {
   poweredByHeader: false,
   serverExternalPackages: ['postgres'],
-  experimental: { serverActions: { bodySizeLimit: '5mb' } },
+  experimental: { serverActions: { bodySizeLimit: '1mb' } },
   async headers() {
     return [
       {
@@ -15,6 +15,14 @@ const nextConfig = {
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), usb=(), payment=(), interest-cohort=()' },
           { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
           { key: 'X-DNS-Prefetch-Control', value: 'off' },
+        ],
+      },
+      {
+        // API javoblari uchun ham qat'iy siyosat (middleware ularga CSP qo'ymaydi)
+        source: '/api/:path*',
+        headers: [
+          { key: 'Content-Security-Policy', value: "default-src 'none'; frame-ancestors 'none'" },
+          { key: 'Cache-Control', value: 'no-store' },
         ],
       },
     ];

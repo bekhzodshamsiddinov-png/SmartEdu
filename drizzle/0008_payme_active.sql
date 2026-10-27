@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "payme_one_active_per_order" ON "payme_transactions" USING btree ("order_id") WHERE state = 1;

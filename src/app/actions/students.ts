@@ -7,6 +7,7 @@ import { run, str, req, int } from '@/lib/action';
 import { normalizePhone } from '@/lib/format';
 import { today } from '@/lib/dates';
 import { assertBranch, resolveBranch } from '@/lib/branch';
+import { audit } from '@/lib/security';
 
 async function feeFor(groupId: number) {
   const [g] = await db
@@ -48,7 +49,10 @@ export async function createStudent(fd: FormData) {
       .returning({ id: students.id });
     const groupId = int(fd, 'groupId');
     if (groupId) {
-      const fee = int(fd, 'monthlyFee') ?? (await feeFor(groupId));
+      // Narxni faqat rahbar/administrator o'zgartiradi, qolganlarga guruh narxi qo'llanadi
+      const custom = canSetFee(u.role) ? int(fd, 'monthlyFee') : null;
+      if (custom !== null && custom < 0) throw new Error("Oylik to'lov manfiy bo'lmaydi.");
+      const fee = custom ?? (await feeFor(groupId));
       await db.insert(enrollments).values({ studentId: s.id, groupId, monthlyFee: fee, startDate: str(fd, 'startDate') || joinedAt });
     }
     const leadId = int(fd, 'leadId');
@@ -107,6 +111,10 @@ export async function changeStatus(id: number, fd: FormData) {
       // O'qituvchi faqat o'z o'quvchisini "xavf ostida" deb belgilay oladi
       if (status !== 'xavf') throw new Error("Holatni administrator o'zgartiradi.");
       await assertOwnStudent(u, id);
+    }
+    // To'lov hisobini to'xtatadigan holatlar (ketdi, muzlatildi, bitirdi) — faqat rahbar yoki administrator
+    if ((status === 'ketgan' || status === 'muzlatilgan' || status === 'bitirgan') && !canSetFee(u.role)) {
+      throw new Error("Bu holatni rahbar yoki administrator o'zgartiradi.");
     }
     const date = str(fd, 'date') || today();
     if (status === 'ketgan') {
@@ -180,7 +188,7 @@ export async function enroll(studentId: number, fd: FormData) {
 export async function endEnrollment(enrollmentId: number) {
   return run(async () => {
     const u = await assertSection('students');
-    if (u.role === 'oqituvchi' || u.role === 'support') throw new Error("Ruxsat yo'q.");
+    if (!canSetFee(u.role)) throw new Error("Guruhdan chiqarishni rahbar yoki administrator bajaradi.");
     await assertBranch('enrollment', enrollmentId);
     await db.update(enrollments).set({ active: false, endDate: today() }).where(eq(enrollments.id, enrollmentId));
     return { message: 'Guruhdan chiqarildi' };
@@ -212,8 +220,14 @@ export async function addNote(entityType: 'student' | 'lead', entityId: number, 
 export async function addGrade(studentId: number, fd: FormData) {
   return run(async () => {
     const u = await assertSection('students');
+    if (!['rahbar', 'admin', 'oqituvchi', 'support'].includes(u.role)) throw new Error("Bahoni o'qituvchi qo'yadi.");
     await assertBranch('student', studentId);
     await assertOwnStudent(u, studentId);
+    const gid = int(fd, 'groupId');
+    if (gid) {
+      const [e] = await db.select({ id: enrollments.id }).from(enrollments).where(and(eq(enrollments.studentId, studentId), eq(enrollments.groupId, gid)));
+      if (!e) throw new Error("Guruh noto'g'ri.");
+    }
     const score = int(fd, 'score');
     if (score === null || score < 0 || score > 100) throw new Error("Baho 0 dan 100 gacha bo'lsin.");
     await db.insert(grades).values({ studentId, groupId: int(fd, 'groupId'), period: req(fd, 'period', 'Davr'), score, comment: str(fd, 'comment'), teacherId: u.id });
@@ -224,6 +238,7 @@ export async function addGrade(studentId: number, fd: FormData) {
 export async function addResult(studentId: number, fd: FormData) {
   return run(async () => {
     const u = await assertSection('students');
+    if (!['rahbar', 'admin', 'oqituvchi', 'support'].includes(u.role)) throw new Error("Natijani o'qituvchi yoki administrator yozadi.");
     await assertBranch('student', studentId);
     await assertOwnStudent(u, studentId);
     await db.insert(results).values({
@@ -242,7 +257,13 @@ export async function deleteStudent(id: number) {
   return run(async () => {
     const u = await assertSection('students');
     if (u.role !== 'rahbar') throw new Error("O'quvchini faqat rahbar o'chira oladi.");
+    const [st] = await db.select({ name: students.fullName }).from(students).where(eq(students.id, id));
+    if (!st) throw new Error("O'quvchi topilmadi.");
+    const [pays] = await db.execute<{ c: number; s: number }>(sql`select count(*)::int c, coalesce(sum(amount),0)::bigint s from payments where student_id = ${id}`);
+    // To'lovi bor o'quvchini o'chirsa moliya tarixi ham yo'qoladi — buning o'rniga "ketdi" holatini qo'ying
+    if (pays.c > 0) throw new Error(`Bu o'quvchida ${pays.c} ta to'lov bor. Moliya tarixi yo'qolmasligi uchun o'chirmang — "Ketdi" holatini qo'ying.`);
     await db.delete(students).where(eq(students.id, id));
+    await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: "O'quvchi o'chirildi", detail: st.name });
     return { message: "O'quvchi o'chirildi" };
   });
 }

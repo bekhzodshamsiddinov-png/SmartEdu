@@ -3,6 +3,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import { db } from '@/db';
 import { groups, courses, users, enrollments, students, lessons } from '@/db/schema';
 import { requireSection } from '@/lib/auth';
+import { seesMoney } from '@/lib/roles';
 import { getBalances } from '@/lib/finance';
 import { groupOptions, staffOptions } from '@/lib/options';
 import { GroupsView } from './view';
@@ -71,13 +72,15 @@ export default async function GroupsPage({ searchParams }: { searchParams: Promi
       db.select({ id: lessons.id, date: lessons.date, topic: lessons.topic, teacherStatus: lessons.teacherStatus }).from(lessons).where(eq(lessons.groupId, gid)).orderBy(desc(lessons.date)).limit(30),
       db.execute<{ student_id: number; total: number; present: number }>(sql`select student_id, count(*)::int total, count(*) filter (where status in ('keldi','kechikdi'))::int present from attendance where group_id = ${gid} group by 1`),
     ]);
-    const bal = await getBalances();
+    // Pul ma'lumotini ko'rmaydigan rollarga u umuman yuborilmaydi
+    const money = seesMoney(user.role) || user.role === 'admin';
+    const bal = money ? await getBalances() : new Map();
     const am = new Map(att.map((a) => [a.student_id, a]));
     detail = {
       id: gid,
       members: members.map((m) => {
         const a = am.get(m.id);
-        return { ...m, balance: bal.get(m.id)?.balance ?? 0, att: a && a.total ? Math.round((a.present / a.total) * 100) : null };
+        return { ...m, fee: money ? m.fee : 0, balance: money ? (bal.get(m.id)?.balance ?? 0) : 0, att: a && a.total ? Math.round((a.present / a.total) * 100) : null };
       }),
       lessons: ls,
     };

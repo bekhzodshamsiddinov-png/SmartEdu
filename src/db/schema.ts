@@ -12,6 +12,7 @@ import {
   uniqueIndex,
   index,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 export const roleEnum = pgEnum('role', [
   'rahbar',
@@ -528,7 +529,10 @@ export const paymeTransactions = pgTable('payme_transactions', {
   createTime: bigint('create_time', { mode: 'number' }).notNull(),
   performTime: bigint('perform_time', { mode: 'number' }).notNull().default(0),
   cancelTime: bigint('cancel_time', { mode: 'number' }).notNull().default(0),
-});
+}, (t) => [
+  // Bitta buyurtmaga bir vaqtda faqat bitta faol (state=1) Payme tranzaksiyasi
+  uniqueIndex('payme_one_active_per_order').on(t.orderId).where(sql`state = 1`),
+]);
 
 /** Muvaffaqiyatsiz urinishlar (brute-force himoyasi) */
 export const authAttempts = pgTable(

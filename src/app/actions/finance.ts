@@ -70,7 +70,8 @@ export async function deleteTransaction(id: number) {
 
 export async function saveReconciliation(month: string, fd: FormData) {
   return run(async () => {
-    await assertSection('finance');
+    const u = await assertSection('finance');
+    if (u.branchId) throw new Error("Solishtirma butun kompaniya bo'yicha — uni rahbar bajaradi.");
     if (!/^\d{4}-\d{2}$/.test(month)) throw new Error("Oy noto'g'ri.");
     const bank: Record<string, number> = {};
     const tax: Record<string, number> = {};
@@ -84,6 +85,7 @@ export async function saveReconciliation(month: string, fd: FormData) {
       .insert(reconciliations)
       .values({ month, bank, tax, note: str(fd, 'note') })
       .onConflictDoUpdate({ target: reconciliations.month, set: { bank, tax, note: str(fd, 'note'), updatedAt: new Date() } });
+    await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: 'Solishtirma saqlandi', detail: month });
     return { message: 'Solishtirma saqlandi' };
   });
 }

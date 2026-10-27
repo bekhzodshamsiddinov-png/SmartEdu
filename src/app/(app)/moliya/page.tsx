@@ -35,7 +35,9 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
     getSettings(),
     db.execute<{ method: string; s: string }>(sql`select p.method::text, sum(p.amount) s from payments p where p.paid_at between ${from} and ${to} ${B ? sql`and p.branch_id = ${B}` : sql``} group by 1`),
   ]);
-  const [ieAll, catAll] = B ? await Promise.all([incomeExpense(from, to), expensesByCategory(from, to)]) : [ie, byCat];
+  // Filialga biriktirilgan xodim butun kompaniya raqamlarini ko'rmaydi
+  const locked = !!user.branchId;
+  const [ieAll, catAll] = B && !locked ? await Promise.all([incomeExpense(from, to), expensesByCategory(from, to)]) : [ie, byCat];
   const system: Record<string, number> = { kirim: ieAll.income, oylik: 0, ijara: 0, kommunal: 0, marketing: 0, soliq: 0, boshqa: 0 };
   for (const c of catAll) system[CATEGORY_TO_RECON[c.category] ?? 'boshqa'] += Number(c.s);
   return (
@@ -43,7 +45,8 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
       month={month}
       tx={tx}
       ie={ie}
-      rec={rec[0] ? { bank: rec[0].bank, tax: rec[0].tax, note: rec[0].note } : null}
+      rec={!locked && rec[0] ? { bank: rec[0].bank, tax: rec[0].tax, note: rec[0].note } : null}
+      canReconcile={!locked}
       system={system}
       byCourse={byCourse.map((c) => ({ name: c.name, color: c.color, s: Number(c.s) }))}
       byCat={byCat.map((c) => ({ category: c.category, s: Number(c.s) }))}

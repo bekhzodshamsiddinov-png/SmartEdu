@@ -1,10 +1,11 @@
 'use server';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db';
-import { tasks, staffReports, graduates } from '@/db/schema';
+import { tasks, staffReports, graduates, students } from '@/db/schema';
+import { assertBranch } from '@/lib/branch';
 import { assertSection } from '@/lib/auth';
 import { run, str, req, int, bool } from '@/lib/action';
-import { today } from '@/lib/dates';
+import { addDays, today } from '@/lib/dates';
 
 export async function saveTask(id: number | null, fd: FormData) {
   return run(async () => {
@@ -54,9 +55,12 @@ export async function deleteTask(id: number) {
 export async function submitReport(fd: FormData) {
   return run(async () => {
     const u = await assertSection('reports');
+    const date = str(fd, 'date') || today();
+    // Hisobotni faqat bugun yoki kecha uchun yozish mumkin (nazorat ballarini soxtalashtirib bo'lmasin)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > today() || date < addDays(today(), -1)) throw new Error('Hisobotni faqat bugun yoki kecha uchun yozish mumkin.');
     await db.insert(staffReports).values({
       userId: u.id,
-      date: str(fd, 'date') || today(),
+      date,
       kind: str(fd, 'kind') || 'kunlik',
       done: req(fd, 'done', 'Bugun nima qilindi'),
       problems: str(fd, 'problems'),
@@ -68,7 +72,10 @@ export async function submitReport(fd: FormData) {
 
 export async function saveGraduate(studentId: number, fd: FormData) {
   return run(async () => {
-    await assertSection('graduates');
+    const u = await assertSection('graduates');
+    await assertBranch('student', studentId);
+    const [st] = await db.select({ status: students.status, name: students.fullName }).from(students).where(eq(students.id, studentId));
+    if (!st || st.status !== 'bitirgan') throw new Error("Bu o'quvchi bitiruvchi emas.");
     const v = {
       workplace: str(fd, 'workplace'),
       position: str(fd, 'position'),
@@ -81,7 +88,9 @@ export async function saveGraduate(studentId: number, fd: FormData) {
       note: str(fd, 'note'),
       updatedAt: new Date(),
     };
+    if (v.monthlyIncome !== null && (v.monthlyIncome < 0 || v.monthlyIncome > 1_000_000_000)) throw new Error("Daromad noto'g'ri.");
     await db.insert(graduates).values({ studentId, ...v }).onConflictDoUpdate({ target: graduates.studentId, set: v });
+    void u;
     return { message: "Bitiruvchi ma'lumotlari saqlandi" };
   });
 }

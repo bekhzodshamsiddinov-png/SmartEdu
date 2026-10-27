@@ -37,7 +37,8 @@ export async function notifyTelegram(text: string) {
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: true }),
+      // Foydalanuvchi kiritgan matn xabarni soxtalashtira olmasin: uzunlik cheklanadi, boshqaruv belgilari olinadi
+      body: JSON.stringify({ chat_id: chat, text: text.replace(/[\u0000-\u0009\u000b-\u001f\u007f\u0085\u2028\u2029]/g, ' ').slice(0, 3500), disable_web_page_preview: true }),
       signal: AbortSignal.timeout(4000),
     });
   } catch {

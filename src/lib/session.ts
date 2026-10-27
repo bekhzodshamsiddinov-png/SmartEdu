@@ -1,6 +1,8 @@
 import { SignJWT, jwtVerify } from 'jose';
 
-export const SESSION_COOKIE = 'smartedu_session';
+/** Production'da __Host- prefiksi: cookie faqat HTTPS, faqat shu domen, boshqa subdomen soxtalashtira olmaydi */
+const HOST = process.env.NODE_ENV === 'production' ? '__Host-' : '';
+export const SESSION_COOKIE = HOST + 'smartedu_session';
 const MAX_AGE = 60 * 60 * 24 * 7; // 7 kun
 
 /** Production'da kuchli AUTH_SECRET bo'lmasa tizim ishlamaydi (soxta sessiya yasab bo'lmasin) */

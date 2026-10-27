@@ -84,8 +84,18 @@ export function otpauthUrl(secret: string, account: string, issuer = 'SmartEdu')
   return `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(account)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=${PERIOD}`;
 }
 
+/** Shifrlash kaliti: alohida TOTP_ENC_KEY bo'lsa o'sha, bo'lmasa AUTH_SECRET'dan olinadi */
 function key() {
-  return createHash('sha256').update(authSecret() + ':totp-encryption').digest();
+  return createHash('sha256').update((process.env.TOTP_ENC_KEY || authSecret()) + ':totp-encryption').digest();
+}
+
+/** Ochib bo'lmasa (kalit almashgan) null — shunda zaxira kod bilan kirish mumkin bo'ladi */
+export function tryOpenSecret(sealed: string) {
+  try {
+    return openSecret(sealed);
+  } catch {
+    return null;
+  }
 }
 
 export function sealSecret(secret: string) {
@@ -114,6 +124,13 @@ export function newBackupCodes(n = 8) {
   });
 }
 
+/** Zaxira kod xeshi: serverdagi maxfiy kalit bilan HMAC — baza o'g'irlansa ham kodlarni terib topib bo'lmaydi */
 export function hashBackup(code: string) {
+  const norm = code.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return 'h1:' + createHmac('sha256', createHash('sha256').update(authSecret() + ':backup-pepper').digest()).update(norm).digest('hex');
+}
+
+/** Eski (kalitsiz) formatdagi xesh — oldin yaratilgan kodlar ishlashda davom etishi uchun */
+export function legacyBackupHash(code: string) {
   return createHash('sha256').update('smartedu-backup:' + code.toUpperCase().replace(/[^A-Z0-9]/g, '')).digest('hex');
 }

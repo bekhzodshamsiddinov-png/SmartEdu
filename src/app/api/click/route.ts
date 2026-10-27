@@ -40,7 +40,8 @@ export async function POST(req: Request) {
   const orderId = Number(merchantTransId);
   const [o] = orderId ? await db.select().from(courseOrders).where(eq(courseOrders.id, orderId)) : [];
   if (!o) return fail(-5, 'User does not exist');
-  if (Math.abs(Number(f('amount')) - o.amount) > 0.01) return fail(-2, 'Incorrect parameter amount');
+  const amt = Number(f('amount'));
+  if (!Number.isFinite(amt) || Math.abs(amt - o.amount) > 0.01) return fail(-2, 'Incorrect parameter amount');
 
   if (action === '0') {
     if (o.status === 'tolandi') return fail(-4, 'Already paid');
@@ -53,11 +54,15 @@ export async function POST(req: Request) {
 
   // action = 1 (complete)
   if (Number(prepareId) !== o.id) return fail(-6, 'Transaction does not exist');
+  // Click shu to'lovni qayta yuborsa (retry) — xuddi o'sha javobni qaytaramiz
+  if (o.status === 'tolandi' && o.provider === 'click' && o.providerTx === clickTransId) {
+    return NextResponse.json({ ...base, merchant_confirm_id: o.id, error: 0, error_note: 'Success' });
+  }
   if (o.status === 'tolandi') return fail(-4, 'Already paid');
   if (o.status !== 'kutilmoqda') return fail(-9, 'Transaction cancelled');
   if (Number(f('error')) < 0) {
     return NextResponse.json({ ...base, merchant_confirm_id: o.id, error: -9, error_note: 'Transaction cancelled' });
   }
-  if (!(await markOrderPaid(o.id, 'click', clickTransId))) return fail(-4, 'Already paid');
+  if (!(await markOrderPaid(o.id, 'click', clickTransId, Math.round(amt)))) return fail(-4, 'Already paid');
   return NextResponse.json({ ...base, merchant_confirm_id: o.id, error: 0, error_note: 'Success' });
 }

@@ -1,6 +1,7 @@
 'use server';
 import { audit, hashPassword, passwordProblem } from '@/lib/security';
 import { releaseOrderPromo, reservePromo } from '@/lib/promo';
+import { notifyTelegram } from '@/lib/payments';
 import { and, asc, desc, eq, gt, lt, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { onlineCourses, courseModules, courseLessons, learners, courseOrders, promoCodes } from '@/db/schema';
@@ -46,6 +47,13 @@ export async function saveOnlineCourse(id: number | null, fd: FormData) {
       accessDays: int(fd, 'accessDays'),
       updatedAt: new Date(),
     };
+    if (v.price < 0 || v.price > 100_000_000) throw new Error("Narx noto'g'ri.");
+    if (v.oldPrice !== null && (v.oldPrice < 0 || v.oldPrice > 100_000_000)) throw new Error("Eski narx noto'g'ri.");
+    // 0 yoki bo'sh = umrbod; manfiy kun mumkin emas
+    if (v.accessDays !== null && (v.accessDays < 0 || v.accessDays > 3650)) throw new Error("Kirish muddati 1–3650 kun bo'lsin (bo'sh = umrbod).");
+    if (v.accessDays === 0) v.accessDays = null;
+    if (v.coverUrl && !/^https:\/\//.test(v.coverUrl)) throw new Error("Muqova rasmi https:// bilan boshlanishi kerak.");
+    if (!/^#[0-9a-fA-F]{6}$/.test(v.color)) v.color = '#008A70';
     if (id) {
       await db.update(onlineCourses).set(v).where(eq(onlineCourses.id, id));
       return { id, message: 'Kurs saqlandi' };
@@ -209,12 +217,15 @@ export async function createOrder(fd: FormData) {
     if (!courseId) throw new Error('Kursni tanlang.');
     const phone = normalizePhone(req(fd, 'phone', 'Telefon'));
     if (phone.length < 9) throw new Error("Telefon raqamni to'liq kiriting.");
-    const name = req(fd, 'fullName', 'Ism');
+    const name = req(fd, 'fullName', 'Ism').replace(/[\u0000-\u001f\u007f\u0085\u2028\u2029]/g, ' ').slice(0, 80);
     let [l] = await db.select().from(learners).where(eq(learners.phone, phone));
     if (!l) [l] = await db.insert(learners).values({ fullName: name, phone, email: str(fd, 'email'), telegram: str(fd, 'telegram'), source: str(fd, 'source') }).returning();
     const code = str(fd, 'promoCode');
     const q = await priceFor(courseId, code);
     const statusIn = str(fd, 'status') === 'kutilmoqda' ? 'kutilmoqda' : 'tolandi';
+    if (statusIn === 'tolandi' && !['rahbar', 'bugalter', 'admin'].includes(u.role)) {
+      throw new Error("\"To'langan\" sotuvni rahbar, hisobchi yoki administrator kiritadi. Siz \"To'lov kutilmoqda\" holatida qo'shing.");
+    }
     const custom = int(fd, 'amount');
     let amount = q.price;
     if (custom !== null && custom !== q.course.price && custom !== q.price) {
@@ -223,23 +234,39 @@ export async function createOrder(fd: FormData) {
       if (custom < 0 || custom > q.course.price * 3) throw new Error("Summa noto'g'ri.");
       amount = custom;
     }
-    if (q.promo && !(await reservePromo(q.promo.code, courseId))) throw new Error('Promokod limiti tugagan yoki faol emas.');
+    const [dup] = await db.execute<{ c: number }>(sql`
+      select count(*)::int c from course_orders where learner_id = ${l.id} and course_id = ${courseId}
+        and (status = 'kutilmoqda' or (status = 'tolandi' and (access_until is null or access_until >= ${today()})))`);
+    if (dup.c) throw new Error("Bu o'quvchida shu kurs bo'yicha ochiq yoki to'langan buyurtma bor. Sotuvlar ro'yxatidan o'shani ishlating.");
     const status = statusIn;
     const paidAt = status === 'tolandi' ? str(fd, 'paidAt') || today() : null;
-    await db.insert(courseOrders).values({
+    if (paidAt) {
+      // Kelajakdagi yoki juda eski sana bilan "abadiy" ruxsat ochib bo'lmaydi
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(paidAt) || paidAt > today() || paidAt < addDays(today(), -31)) throw new Error("To'lov sanasi noto'g'ri (bugun yoki oxirgi 31 kun ichida bo'lsin).");
+    }
+    // Promokod band qilish va buyurtma yozish — bitta tranzaksiyada (xato bo'lsa promokod qaytadi)
+    await db.transaction(async (tx) => {
+    if (q.promo && !(await reservePromo(q.promo.code, courseId, tx))) throw new Error('Promokod limiti tugagan yoki faol emas.');
+    await tx.insert(courseOrders).values({
       learnerId: l.id,
       courseId,
       amount,
       originalPrice: q.course.price,
       promoCode: q.promo?.code ?? null,
       promoReserved: !!q.promo,
-      method: str(fd, 'method') || 'click',
+      method: ['click', 'payme', 'uzum', 'karta', 'naqd', 'bank', 'bepul'].includes(str(fd, 'method') ?? '') ? str(fd, 'method')! : 'karta',
       status,
       paidAt,
       accessUntil: paidAt && q.course.accessDays ? addDays(paidAt, q.course.accessDays) : null,
       note: str(fd, 'note'),
       createdById: u.id,
     });
+    });
+    if (status === 'tolandi') {
+      const d = `${l.fullName} (+${l.phone}) — ${q.course.title}, ${amount} so'm, ${paidAt}`;
+      await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: "Onlayn sotuv qo'lda qayd etildi", detail: d });
+      if (u.role !== 'rahbar') await notifyTelegram(`🧾 SmartEdu: ${u.fullName} onlayn kursni qo'lda "to'langan" deb ochdi\n${d}`);
+    }
     return { message: status === 'tolandi' ? "Sotuv qayd etildi, kursga ruxsat ochildi" : "Buyurtma qo'shildi, to'lov kutilmoqda" };
   });
 }
@@ -250,10 +277,14 @@ export async function setOrderStatus(id: number, status: 'tolandi' | 'qaytarildi
   return run(async () => {
     const u = await assertSection('online');
     if (status === 'qaytarildi' && u.role !== 'rahbar') throw new Error("Pulni qaytarishni faqat rahbar tasdiqlaydi.");
+    // Pul tushganini faqat rahbar, hisobchi yoki administrator tasdiqlaydi (sotuv/marketing emas)
+    if (status === 'tolandi' && !['rahbar', 'bugalter', 'admin'].includes(u.role)) throw new Error("To'lovni rahbar, hisobchi yoki administrator tasdiqlaydi.");
     const [o] = await db.select().from(courseOrders).where(eq(courseOrders.id, id));
     if (!o) throw new Error('Buyurtma topilmadi.');
     if (!TRANSITIONS[o.status]?.includes(status)) throw new Error("Bu buyurtma holatini bunday o'zgartirib bo'lmaydi.");
     if (status === 'tolandi') {
+      const [busy] = await db.execute<{ c: number }>(sql`select count(*)::int c from payme_transactions where order_id = ${id} and state = 1`);
+      if (busy.c) throw new Error("Bu buyurtma uchun Payme to'lovi jarayonda — kuting.");
       const [c] = await db.select().from(onlineCourses).where(eq(onlineCourses.id, o.courseId));
       const d = today();
       // Atomar: faqat hali kutilayotgan buyurtma to'lanadi (parallel bosish ikki marta hisoblamaydi)
@@ -268,6 +299,7 @@ export async function setOrderStatus(id: number, status: 'tolandi' | 'qaytarildi
         await db.update(courseOrders).set({ promoReserved: true }).where(eq(courseOrders.id, id));
       }
       await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: "Onlayn to'lov tasdiqlandi", detail: `buyurtma #${id}, ${o.amount} so'm` });
+      if (u.role !== 'rahbar') await notifyTelegram(`✅ SmartEdu: ${u.fullName} onlayn buyurtma #${id} ni "to'landi" deb tasdiqladi (${o.amount} so'm). Pul haqiqatan tushganini tekshiring.`);
       return { message: "To'landi, kursga ruxsat ochildi" };
     }
     const done = await db
@@ -286,12 +318,19 @@ export async function setOrderStatus(id: number, status: 'tolandi' | 'qaytarildi
 
 export async function saveLearner(id: number, fd: FormData) {
   return run(async () => {
-    await assertSection('online');
+    const me = await assertSection('online');
+    const [old] = await db.select({ phone: learners.phone, fullName: learners.fullName }).from(learners).where(eq(learners.id, id));
+    if (!old) throw new Error("O'quvchi topilmadi.");
+    const phone = normalizePhone(req(fd, 'phone', 'Telefon'));
+    if (phone.length !== 12) throw new Error("Telefon raqamni to'liq kiriting.");
+    const phoneChanged = phone !== old.phone;
     await db
       .update(learners)
       .set({
-        fullName: req(fd, 'fullName', 'Ism'),
-        phone: normalizePhone(req(fd, 'phone', 'Telefon')),
+        fullName: req(fd, 'fullName', 'Ism').replace(/[\u0000-\u001f\u007f\u0085\u2028\u2029]/g, ' ').slice(0, 80),
+        phone,
+        // Raqam o'zgarsa o'quvchining barcha sessiyalari yopiladi
+        ...(phoneChanged ? { sessionVersion: sql`${learners.sessionVersion} + 1` } : {}),
         email: str(fd, 'email'),
         telegram: str(fd, 'telegram'),
         city: str(fd, 'city'),
@@ -299,6 +338,7 @@ export async function saveLearner(id: number, fd: FormData) {
         note: str(fd, 'note'),
       })
       .where(eq(learners.id, id));
+    if (phoneChanged) await audit({ actorType: 'xodim', actorId: me.id, actorName: me.fullName, action: "O'quvchi raqami o'zgartirildi", detail: `${old.fullName}: +${old.phone} → +${phone}` });
     return { message: "Ma'lumotlar saqlandi" };
   });
 }
@@ -314,6 +354,11 @@ export async function savePromo(id: number | null, fd: FormData) {
     const value = int(fd, 'value');
     if (!value || value <= 0) throw new Error("Chegirma miqdorini kiriting.");
     if (type === 'percent' && value > 100) throw new Error("Foiz 100 dan oshmasin.");
+    const me = await assertSection('onlineEdit');
+    // Katta chegirma (90%+ yoki 500 000 so'mdan ortiq) — faqat rahbar yaratadi
+    if (me.role !== 'rahbar' && ((type === 'percent' && value >= 90) || (type !== 'percent' && value > 500_000))) {
+      throw new Error("Bunday katta chegirmali promokodni faqat rahbar yaratadi.");
+    }
     const v = {
       code,
       percent: type === 'percent' ? value : null,
@@ -324,6 +369,7 @@ export async function savePromo(id: number | null, fd: FormData) {
     };
     if (id) await db.update(promoCodes).set(v).where(eq(promoCodes.id, id));
     else await db.insert(promoCodes).values(v);
+    await audit({ actorType: 'xodim', actorId: me.id, actorName: me.fullName, action: id ? 'Promokod tahrirlandi' : 'Promokod yaratildi', detail: `${code}: ${v.percent ? v.percent + '%' : v.amount + " so'm"}${v.maxUses ? `, ${v.maxUses} marta` : ''}` });
     return { message: id ? 'Promokod saqlandi' : 'Promokod yaratildi' };
   });
 }
@@ -342,8 +388,10 @@ export async function setLearnerPassword(id: number, fd: FormData) {
   return run(async () => {
     const me = await assertSection('online');
     const pw = req(fd, 'password', 'Parol');
-    const [l] = await db.select({ phone: learners.phone, fullName: learners.fullName }).from(learners).where(eq(learners.id, id));
+    const [l] = await db.select({ phone: learners.phone, fullName: learners.fullName, hasPw: learners.passwordHash }).from(learners).where(eq(learners.id, id));
     if (!l) throw new Error("O'quvchi topilmadi.");
+    // O'quvchi o'zi qo'ygan parolni faqat rahbar almashtira oladi (hisobni egallab olishning oldini olish)
+    if (l.hasPw && me.role !== 'rahbar') throw new Error("O'quvchining o'z paroli bor. Uni faqat rahbar almashtira oladi.");
     const err = passwordProblem(pw, l.phone);
     if (err) throw new Error(err);
     await db.update(learners).set({ passwordHash: await hashPassword(pw), sessionVersion: sql`${learners.sessionVersion} + 1` }).where(eq(learners.id, id));

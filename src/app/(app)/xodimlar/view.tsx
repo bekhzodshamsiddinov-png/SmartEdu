@@ -75,11 +75,7 @@ export function StaffView({ staff, meId, month, branches }: { staff: S[]; meId: 
                   <Button size="icon" variant="ghost" onClick={() => setEdit(s)} aria-label="Tahrirlash">
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  {s.id !== meId && s.twoFactor && (
-                    <ActionButton variant="ghost" size="icon" action={() => reset2fa(s.id)} confirm={`${s.fullName}: telefoni yo'qolganmi? Ikki bosqichli kirish o'chiriladi, xodim qayta yoqadi.`} title="2FA ni bekor qilish (telefon yo'qolsa)">
-                      <ShieldOff className="h-4 w-4" />
-                    </ActionButton>
-                  )}
+                  {s.id !== meId && s.twoFactor && <Reset2fa id={s.id} name={s.fullName} />}
                   {s.id !== meId && (
                     <ActionButton variant="ghost" size="icon" action={() => toggleStaff(s.id)} confirm={s.active ? 'Xodim tizimga kira olmaydigan bo\'ladi. Davom etasizmi?' : undefined} title={s.active ? 'Faolsizlantirish' : 'Faollashtirish'}>
                       {s.active ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
@@ -190,6 +186,32 @@ function StaffForm({ s, branches, onDone }: { s: S | null; branches: { id: numbe
       <Field label="Bonus qoidasi" hint="Masalan: har bir yangi o'quvchi uchun 50 000 so'm">
         <input name="bonusRule" defaultValue={s?.bonusRule ?? ''} className="field" />
       </Field>
+      {(role === 'rahbar' || s?.role === 'rahbar') && (
+        <Field label="Sizning parolingiz" hint="Rahbar hisobini yaratish yoki o'zgartirish xavfsizlik uchun parol bilan tasdiqlanadi">
+          <input name="confirmPassword" type="password" autoComplete="current-password" className="field" />
+        </Field>
+      )}
     </ActionForm>
+  );
+}
+
+function Reset2fa({ id, name }: { id: number; name: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button variant="ghost" size="icon" onClick={() => setOpen(true)} title="2FA ni bekor qilish (telefon yo'qolsa)" aria-label="2FA ni bekor qilish">
+        <ShieldOff className="h-4 w-4" />
+      </Button>
+      <Modal open={open} onClose={() => setOpen(false)} title="Ikki bosqichli kirishni bekor qilish" size="sm">
+        {open && (
+          <ActionForm action={reset2fa.bind(null, id)} submitLabel="Bekor qilish" danger onDone={() => setOpen(false)} onCancel={() => setOpen(false)}>
+            <p className="text-sm text-fg-muted">{name}: telefoni yo&apos;qolgan bo&apos;lsa, uning 2FA si o&apos;chiriladi va xodim qayta yoqadi. Barcha qurilmalardan chiqariladi.</p>
+            <Field label="Sizning parolingiz">
+              <input name="confirmPassword" type="password" autoComplete="current-password" className="field" required />
+            </Field>
+          </ActionForm>
+        )}
+      </Modal>
+    </>
   );
 }

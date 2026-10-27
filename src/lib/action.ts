@@ -5,13 +5,16 @@ export async function run(fn: () => Promise<void | { message?: string; id?: numb
     const r = await fn();
     return { ok: true, ...(r || {}) };
   } catch (e: unknown) {
-    const err = e as { message?: string; digest?: string };
+    const err = e as { message?: string; digest?: string; cause?: { code?: string; message?: string } };
     if (err?.digest?.startsWith('NEXT_REDIRECT')) throw e;
-    console.error(e);
+    const pg = err?.cause;
+    // Logga faqat xato kodi va qisqa matn yoziladi — so'rov parametrlari (telefon, ism, xesh) hech qachon
+    console.error('[action]', pg?.code ?? '', (pg?.message ?? err?.message ?? '').split('\n')[0].slice(0, 200));
+    if (pg?.code === '23505') return { ok: false, error: 'Bunday yozuv allaqachon mavjud.' };
+    if (pg?.code) return { ok: false, error: "Saqlashda xato yuz berdi. Ma'lumotlarni tekshirib qayta urinib ko'ring." };
     const msg = err?.message || 'Kutilmagan xato yuz berdi.';
-    if (/duplicate key|unique/i.test(msg)) return { ok: false, error: 'Bunday yozuv allaqachon mavjud.' };
     // Ma'lumotlar bazasi ichki xatolarini (jadval, ustun, cheklov nomlari) foydalanuvchiga ko'rsatmaymiz
-    const internal = /violates|constraint|relation |column |syntax|invalid input|enum|postgres|ECONN|timeout|null value|foreign key|out of range/i.test(msg);
+    const internal = /Failed query|violates|constraint|relation |column |syntax|invalid input|enum|postgres|ECONN|timeout|null value|foreign key|out of range/i.test(msg);
     return { ok: false, error: internal || msg.length > 200 ? "Saqlashda xato yuz berdi. Ma'lumotlarni tekshirib qayta urinib ko'ring." : msg };
   }
 }

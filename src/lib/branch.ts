@@ -1,9 +1,9 @@
 import 'server-only';
 import { cache } from 'react';
 import { cookies } from 'next/headers';
-import { asc, sql, type SQL } from 'drizzle-orm';
+import { asc, eq, sql, type SQL } from 'drizzle-orm';
 import { db } from '@/db';
-import { branches } from '@/db/schema';
+import { branches, users } from '@/db/schema';
 import { getCurrentUser } from './auth';
 
 export const BRANCH_COOKIE = 'smartedu_branch';
@@ -67,4 +67,14 @@ export async function resolveBranch(formValue: number | null): Promise<number | 
   const locked = await lockedBranch();
   if (locked) return locked;
   return formValue ?? (await branchForNew());
+}
+
+/**
+ * Tayinlanayotgan xodim haqiqiy, faol, kerakli rolda va shu filialda (yoki filialsiz) ekanini tekshiradi.
+ */
+export async function assertStaffFor(userId: number | null, roles: string[], branchId: number | null | undefined) {
+  if (!userId) return;
+  const [u] = await db.select({ role: users.role, active: users.active, b: users.branchId }).from(users).where(eq(users.id, userId));
+  if (!u || !u.active || !roles.includes(u.role)) throw new Error("Tanlangan xodim bu vazifaga mos emas.");
+  if (branchId && u.b && u.b !== branchId) throw new Error('Tanlangan xodim boshqa filialda ishlaydi.');
 }

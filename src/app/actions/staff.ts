@@ -1,5 +1,5 @@
 'use server';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 import { db } from '@/db';
 import { users, settings, type Role } from '@/db/schema';
@@ -11,6 +11,16 @@ import { notifyTelegram } from '@/lib/payments';
 import { LOCK_MESSAGE, audit, clearHits, hashPassword, overLimit, passwordProblem, verifyPassword } from '@/lib/security';
 import { SESSION_COOKIE, sessionCookieOptions, signSession } from '@/lib/session';
 import { hashBackup, newBackupCodes, newSecret, openSecret, otpauthUrl, sealSecret, verifyTotp } from '@/lib/totp';
+
+/**
+ * Muhim o'zgarishlar uchun rahbardan parolini qayta so'raymiz (o'g'irlangan sessiya bilan hisoblarni egallab bo'lmasin).
+ */
+async function stepUp(me: { id: number }, fd: FormData) {
+  if (await overLimit('staff-pw', `u:${me.id}`, 5, 15)) throw new Error(LOCK_MESSAGE);
+  const [u] = await db.select({ hash: users.passwordHash }).from(users).where(eq(users.id, me.id));
+  if (!(await verifyPassword(str(fd, 'confirmPassword') ?? '', u?.hash))) throw new Error('Tasdiqlash uchun o\'z parolingizni to\'g\'ri kiriting.');
+  await clearHits('staff-pw', `u:${me.id}`);
+}
 
 export async function saveStaff(id: number | null, fd: FormData) {
   return run(async () => {
@@ -36,20 +46,24 @@ export async function saveStaff(id: number | null, fd: FormData) {
       const [old] = await db.select().from(users).where(eq(users.id, id));
       if (!old) throw new Error('Xodim topilmadi.');
       if (old.id === me.id && role !== 'rahbar') throw new Error("O'zingizning rahbar lavozimingizni o'zgartira olmaysiz.");
+      // Rahbar hisobi (o'zingiz yoki boshqa rahbar) yoki kimnidir rahbar qilish — parol bilan tasdiqlanadi
+      const sensitive = (old.role === 'rahbar' || role === 'rahbar') && (!!pw || old.role !== role || old.phone !== v.phone);
+      if (sensitive) await stepUp(me, fd);
       // Parol, lavozim, filial yoki telefon o'zgarsa — xodimning barcha ochiq sessiyalari yopiladi
       const revoke = !!pw || old.role !== role || old.branchId !== v.branchId || old.phone !== v.phone;
       await db
         .update(users)
         .set({ ...v, ...(pw ? { passwordHash: await hashPassword(pw) } : {}), ...(revoke ? { sessionVersion: sql`${users.sessionVersion} + 1` } : {}) })
         .where(eq(users.id, id));
-      await audit({
-        actorType: 'xodim', actorId: me.id, actorName: me.fullName, action: 'Xodim tahrirlandi',
-        detail: `${old.fullName}${old.role !== role ? `: lavozim ${old.role} → ${role}` : ''}${pw ? ', parol yangilandi' : ''}`,
-      });
+      const detail = `${old.fullName}${old.role !== role ? `: lavozim ${old.role} → ${role}` : ''}${old.phone !== v.phone ? `, telefon +${old.phone} → +${v.phone}` : ''}${pw ? ', parol yangilandi' : ''}`;
+      await audit({ actorType: 'xodim', actorId: me.id, actorName: me.fullName, action: 'Xodim tahrirlandi', detail });
+      if (sensitive) await notifyTelegram(`⚠️ SmartEdu: rahbar hisobi o'zgartirildi — ${detail}\nKim: ${me.fullName}`);
       return { message: "Xodim ma'lumotlari yangilandi" };
     }
     if (!pw) throw new Error('Yangi xodim uchun parol kiriting.');
+    if (role === 'rahbar') await stepUp(me, fd);
     await db.insert(users).values({ ...v, passwordHash: await hashPassword(pw) });
+    if (role === 'rahbar') await notifyTelegram(`⚠️ SmartEdu: yangi RAHBAR hisobi yaratildi — ${v.fullName} (+${v.phone})\nKim: ${me.fullName}`);
     await audit({ actorType: 'xodim', actorId: me.id, actorName: me.fullName, action: "Xodim qo'shildi", detail: `${v.fullName} (${role})` });
     return { message: "Xodim qo'shildi" };
   });
@@ -61,6 +75,7 @@ export async function toggleStaff(id: number) {
     if (me.id === id) throw new Error("O'zingizni o'chira olmaysiz.");
     const [u] = await db.select().from(users).where(eq(users.id, id));
     if (!u) throw new Error('Xodim topilmadi.');
+    if (u.role === 'rahbar') throw new Error("Rahbar hisobini bu yerda o'chirib bo'lmaydi — tahrirlash oynasida parol bilan lavozimini o'zgartiring.");
     await db.update(users).set({ active: !u.active, sessionVersion: sql`${users.sessionVersion} + 1` }).where(eq(users.id, id));
     await audit({ actorType: 'xodim', actorId: me.id, actorName: me.fullName, action: u.active ? 'Xodim faolsizlantirildi' : 'Xodim faollashtirildi', detail: u.fullName });
     return { message: u.active ? 'Xodim faolsizlantirildi' : 'Xodim qayta faollashtirildi' };
@@ -164,9 +179,13 @@ export async function saveAcademySettings(fd: FormData) {
 /* ---------- Ikki bosqichli kirish (2FA) ---------- */
 
 /** 1-qadam: yangi sir yaratib, QR kodni qaytaradi (hali yoqilmaydi) */
-export async function start2fa() {
+export async function start2fa(password: string) {
   const me = await getCurrentUser();
   if (!me) return { ok: false as const, error: 'Tizimga qayta kiring.' };
+  if (await overLimit('staff-pw', `u:${me.id}`, 5, 15)) return { ok: false as const, error: LOCK_MESSAGE };
+  const [pwRow] = await db.select({ hash: users.passwordHash }).from(users).where(eq(users.id, me.id));
+  if (!(await verifyPassword(String(password ?? ''), pwRow?.hash))) return { ok: false as const, error: "Parol noto'g'ri." };
+  await clearHits('staff-pw', `u:${me.id}`);
   const [u] = await db.select({ enabled: users.totpEnabled }).from(users).where(eq(users.id, me.id));
   if (u?.enabled) return { ok: false as const, error: 'Ikki bosqichli kirish allaqachon yoqilgan.' };
   const secret = newSecret();
@@ -186,10 +205,13 @@ export async function confirm2fa(code: string) {
   const step = verifyTotp(openSecret(u.totpSecret), String(code), 0);
   if (step === null) return { ok: false as const, error: "Kod noto'g'ri. Ilovadagi eng yangi kodni kiriting." };
   const backup = newBackupCodes();
-  await db
+  // Faqat aynan tekshirilgan sir hali kutilayotgan bo'lsa yoqiladi (parallel so'rovlar aralashmasin)
+  const done = await db
     .update(users)
     .set({ totpEnabled: true, totpLastStep: step, totpBackup: JSON.stringify(backup.map(hashBackup)), sessionVersion: sql`${users.sessionVersion} + 1` })
-    .where(eq(users.id, me.id));
+    .where(and(eq(users.id, me.id), eq(users.totpEnabled, false), eq(users.totpSecret, u.totpSecret)))
+    .returning({ id: users.id });
+  if (!done.length) return { ok: false as const, error: 'Sozlash jarayoni o\'zgardi. Qaytadan boshlang.' };
   const [r] = await db.select({ v: users.sessionVersion }).from(users).where(eq(users.id, me.id));
   // Boshqa qurilmalardagi eski sessiyalar yopiladi — endi har kirishda kod so'raladi
   (await cookies()).set(SESSION_COOKIE, await signSession({ uid: me.id, role: me.role, v: r.v }), sessionCookieOptions);
@@ -216,10 +238,11 @@ export async function disable2fa(fd: FormData) {
 }
 
 /** Rahbar: telefonini yo'qotgan xodimning 2FA sini o'chirib beradi */
-export async function reset2fa(id: number) {
+export async function reset2fa(id: number, fd: FormData) {
   return run(async () => {
     const me = await assertSection('staff');
     if (me.id === id) throw new Error("O'zingiznikini \"Mening hisobim\" sahifasida o'chiring.");
+    await stepUp(me, fd);
     const [u] = await db.select({ fullName: users.fullName }).from(users).where(eq(users.id, id));
     if (!u) throw new Error('Xodim topilmadi.');
     await db
@@ -227,6 +250,7 @@ export async function reset2fa(id: number) {
       .set({ totpEnabled: false, totpSecret: null, totpBackup: null, totpLastStep: 0, sessionVersion: sql`${users.sessionVersion} + 1` })
       .where(eq(users.id, id));
     await audit({ actorType: 'xodim', actorId: me.id, actorName: me.fullName, action: '2FA bekor qilindi', detail: u.fullName });
+    await notifyTelegram(`⚠️ SmartEdu: ${u.fullName} ning ikki bosqichli kirishi bekor qilindi.\nKim: ${me.fullName}`);
     return { message: `${u.fullName}: ikki bosqichli kirish o'chirildi` };
   });
 }

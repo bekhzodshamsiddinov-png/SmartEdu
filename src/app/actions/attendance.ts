@@ -5,6 +5,7 @@ import { attendance, lessons, groups, notes } from '@/db/schema';
 import { assertSection } from '@/lib/auth';
 import { run } from '@/lib/action';
 import { assertBranch } from '@/lib/branch';
+import { addDays, today } from '@/lib/dates';
 
 type Mark = { studentId: number; status: 'keldi' | 'kelmadi' | 'kechikdi' | 'sababli'; reason?: string | null };
 
@@ -23,6 +24,9 @@ export async function saveAttendance(input: {
     if ((u.role === 'oqituvchi' || u.role === 'support') && g.teacherId !== u.id && g.supportId !== u.id)
       throw new Error("Faqat o'z guruhingiz davomatini belgilay olasiz.");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) throw new Error("Sana noto'g'ri.");
+    // Kelajak kunlarga davomat yozib bo'lmaydi; o'qituvchi faqat oxirgi 3 kunni tuzata oladi
+    const back = u.role === 'oqituvchi' || u.role === 'support' ? 3 : 60;
+    if (input.date > today() || input.date < addDays(today(), -back)) throw new Error(`Davomatni faqat oxirgi ${back} kun uchun belgilash mumkin.`);
     if (!Array.isArray(input.marks) || !input.marks.length) throw new Error("Guruhda o'quvchi yo'q.");
     // Faqat shu guruhda haqiqatan o'qiyotgan o'quvchilar uchun davomat yoziladi
     const enrolled = new Set(
@@ -65,12 +69,20 @@ export async function saveAttendance(input: {
   });
 }
 
+/** O'qituvchi/yordamchi faqat o'z guruhi bilan ishlaydi */
+async function assertOwnGroup(u: { id: number; role: string }, groupId: number) {
+  if (u.role !== 'oqituvchi' && u.role !== 'support') return;
+  const [g] = await db.select({ t: groups.teacherId, s: groups.supportId }).from(groups).where(eq(groups.id, groupId));
+  if (!g || (g.t !== u.id && g.s !== u.id)) throw new Error("Bu guruh sizniki emas.");
+}
+
 export async function markCalled(attendanceId: number, reason: string) {
   return run(async () => {
     const u = await assertSection('attendance');
     await assertBranch('attendance', attendanceId);
     const [a] = await db.select().from(attendance).where(eq(attendance.id, attendanceId));
     if (!a) throw new Error('Yozuv topilmadi.');
+    await assertOwnGroup(u, a.groupId);
     await db.update(attendance).set({ called: true, reason: reason || a.reason }).where(eq(attendance.id, attendanceId));
     await db.insert(notes).values({
       entityType: 'student',
@@ -87,6 +99,7 @@ export async function logParentReport(groupId: number, text: string) {
   return run(async () => {
     const u = await assertSection('attendance');
     await assertBranch('group', groupId);
+    await assertOwnGroup(u, groupId);
     const list = await db.execute<{ student_id: number }>(sql`select student_id from enrollments where group_id = ${groupId} and active = true and end_date is null`);
     if (!list.length) throw new Error("Guruhda o'quvchi yo'q.");
     for (const r of list)

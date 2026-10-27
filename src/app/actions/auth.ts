@@ -6,15 +6,15 @@ import { db } from '@/db';
 import { users, settings, courses } from '@/db/schema';
 import { SignJWT, jwtVerify } from 'jose';
 import { SESSION_COOKIE, authSecret, sessionCookieOptions, signSession } from '@/lib/session';
-import { hashBackup, openSecret, verifyTotp } from '@/lib/totp';
+import { hashBackup, legacyBackupHash, tryOpenSecret, verifyTotp } from '@/lib/totp';
 import { normalizePhone } from '@/lib/format';
 import { today } from '@/lib/dates';
 import { notifyTelegram } from '@/lib/payments';
-import { LOCK_MESSAGE, audit, clearHits, clientIp, guardLogin, hashPassword, overLimit, passwordProblem, safeEqual, verifyPassword } from '@/lib/security';
+import { LOCK_MESSAGE, audit, auditExternal, clearHits, clientIp, guardLogin, hashPassword, isTrustedDevice, rememberDevice, overLimit, passwordProblem, safeEqual, verifyPassword } from '@/lib/security';
 
 export type AuthState = { error?: string; step?: 'code' } | undefined;
 
-const PENDING_COOKIE = 'smartedu_2fa';
+const PENDING_COOKIE = (process.env.NODE_ENV === 'production' ? '__Host-' : '') + 'smartedu_2fa';
 const pendingKey = () => new TextEncoder().encode(authSecret() + ':2fa-pending');
 
 /** Yangi joydan kirilsa rahbarga xabar (oxirgi 60 kunda bu IP dan kirilmagan bo'lsa) */
@@ -28,7 +28,8 @@ async function newDeviceAlert(u: { id: number; fullName: string; role: string },
   }
 }
 
-async function finishLogin(u: { id: number; fullName: string; role: string; sessionVersion: number }, ip: string, via: string) {
+async function finishLogin(u: { id: number; fullName: string; role: string; sessionVersion: number; phone: string }, ip: string, via: string) {
+  await rememberDevice('staff', u.phone);
   await newDeviceAlert(u, ip);
   await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: 'Tizimga kirdi', detail: via || null, ip });
   const token = await signSession({ uid: u.id, role: u.role, v: u.sessionVersion });
@@ -42,7 +43,7 @@ export async function login(_: AuthState, fd: FormData): Promise<AuthState> {
   if (!phone || !password) return { error: 'Telefon raqam va parolni kiriting.' };
   if (password.length > 128) return { error: "Telefon raqam yoki parol noto'g'ri." };
   const ip = await clientIp();
-  const g = await guardLogin('staff', phone, ip);
+  const g = await guardLogin('staff', phone, ip, await isTrustedDevice('staff', phone));
   if (g.alert) {
     // Raqamga hujum boshlanganini rahbarga bir marta bildiramiz (spam bo'lmaydi)
     await audit({ actorType: 'tizim', action: 'Kirish bloklandi', detail: `Parol terib topishga urinish: +${phone}`, ip });
@@ -51,7 +52,7 @@ export async function login(_: AuthState, fd: FormData): Promise<AuthState> {
   if (g.blocked) return { error: LOCK_MESSAGE };
   const [u] = await db.select().from(users).where(eq(users.phone, phone)).limit(1);
   if (!(await verifyPassword(password, u?.passwordHash)) || !u) {
-    await audit({ actorType: 'tizim', action: 'Xato parol', detail: `Xodim kirishi: +${phone}`, ip });
+    await auditExternal('Xato parol', `Xodim kirishi: +${phone}`);
     return { error: "Telefon raqam yoki parol noto'g'ri." };
   }
   if (!u.active) return { error: "Hisobingiz o'chirilgan. Rahbarga murojaat qiling." };
@@ -82,20 +83,31 @@ export async function verifyLoginCode(_: AuthState, fd: FormData): Promise<AuthS
   if (await overLimit('2fa', `u:${uid}`, 5, 15)) return { step: 'code', error: LOCK_MESSAGE };
   const [u] = await db.select().from(users).where(eq(users.id, uid));
   if (!u || !u.active || u.sessionVersion !== v || !u.totpEnabled || !u.totpSecret) return { error: 'Qaytadan kiring.' };
-  const code = String(fd.get('code') || '').trim();
+  const code = String(fd.get('code') || '').trim().slice(0, 12);
   let via = '';
-  const step = verifyTotp(openSecret(u.totpSecret), code, u.totpLastStep);
+  /** Xato koddan keyin: 5-xatoda rahbarga xabar va jarayon bekor qilinadi (parol qayta so'raladi) */
+  const failed = async (msg: string) => {
+    const [r] = await db.execute<{ c: number }>(sql`select count(*)::int c from auth_attempts where scope = '2fa' and key = ${`u:${uid}`} and created_at > now() - interval '15 minutes'`);
+    if ((r?.c ?? 0) >= 5) {
+      store.set(PENDING_COOKIE, '', { ...sessionCookieOptions, maxAge: 0 });
+      await notifyTelegram(`🚨 SmartEdu: ${u.fullName} hisobiga to'g'ri parol bilan kirib, 2FA kodini topishga urinishmoqda (5 marta xato).\nIP: ${ip}\nParolni darhol almashtiring!`);
+      return { error: "Juda ko'p xato kod. Xavfsizlik uchun qaytadan kiring." };
+    }
+    return { step: 'code' as const, error: msg };
+  };
+  const plain = tryOpenSecret(u.totpSecret);
+  const step = plain ? verifyTotp(plain, code, u.totpLastStep) : null;
   if (step !== null) {
     // Atomar: shu kod parallel ikkinchi marta ishlatilmasin
     const ok = await db.execute<{ id: number }>(sql`update users set totp_last_step = ${step} where id = ${u.id} and totp_last_step < ${step} returning id`);
-    if (!ok.length) return { step: 'code', error: "Kod noto'g'ri yoki eskirgan." };
+    if (!ok.length) return failed("Kod noto'g'ri yoki eskirgan.");
     via = 'Ikki bosqichli';
   } else {
-    const h = hashBackup(code);
     const list: string[] = JSON.parse(u.totpBackup || '[]');
-    if (!/^[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}$/.test(code) || !list.includes(h)) {
+    const h = [hashBackup(code), legacyBackupHash(code)].find((x) => list.includes(x)) ?? '';
+    if (!/^[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}$/.test(code) || !h) {
       await audit({ actorType: 'tizim', action: 'Xato 2FA kodi', detail: u.fullName, ip });
-      return { step: 'code', error: "Kod noto'g'ri. Telefoningizdagi ilovadan yangi kodni kiriting." };
+      return failed("Kod noto'g'ri. Telefoningizdagi ilovadan yangi kodni kiriting.");
     }
     const rest = list.filter((x) => x !== h);
     const ok = await db.execute<{ id: number }>(sql`update users set totp_backup = ${JSON.stringify(rest)} where id = ${u.id} and totp_backup = ${u.totpBackup} returning id`);
@@ -103,18 +115,18 @@ export async function verifyLoginCode(_: AuthState, fd: FormData): Promise<AuthS
     via = `Zaxira kod bilan (${rest.length} ta qoldi)`;
     await notifyTelegram(`⚠️ SmartEdu: ${u.fullName} zaxira kod bilan kirdi. ${rest.length} ta kod qoldi.`);
   }
-  store.delete({ name: PENDING_COOKIE, path: '/' });
+  store.set(PENDING_COOKIE, '', { ...sessionCookieOptions, maxAge: 0 });
   await clearHits('2fa', `u:${uid}`);
   await finishLogin(u, ip, via);
   return undefined;
 }
 
 export async function logout() {
-  (await cookies()).delete({ name: SESSION_COOKIE, path: '/' });
+  (await cookies()).set(SESSION_COOKIE, '', { ...sessionCookieOptions, maxAge: 0 });
   redirect('/login');
 }
 
-export async function usersCount() {
+async function usersCount() {
   const [r] = await db.select({ c: sql<number>`count(*)::int` }).from(users);
   return r?.c ?? 0;
 }

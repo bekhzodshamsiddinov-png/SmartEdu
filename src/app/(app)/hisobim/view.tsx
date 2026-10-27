@@ -65,6 +65,7 @@ function TwoFactorCard({ enabled, backupLeft }: { enabled: boolean; backupLeft: 
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const [showDisable, setShowDisable] = useState(false);
+  const [pw, setPw] = useState('');
 
   if (backup) {
     return (
@@ -167,19 +168,34 @@ function TwoFactorCard({ enabled, backupLeft }: { enabled: boolean; backupLeft: 
               <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" />
               <span>Hozir faqat parol himoya qilyapti. Rahbar, administrator va hisobchi uchun ikki bosqichli kirishni yoqish tavsiya etiladi.</span>
             </div>
-            <Button
-              disabled={pending}
-              onClick={() =>
+            <form
+              className="flex flex-col gap-2 sm:flex-row"
+              onSubmit={(e) => {
+                e.preventDefault();
                 start(async () => {
                   setError(null);
-                  const r = await start2fa();
-                  if (r.ok) setSetup({ qr: r.qr, secret: r.secret });
-                  else setError(r.error);
-                })
-              }
+                  const r = await start2fa(pw);
+                  if (r.ok) {
+                    setPw('');
+                    setSetup({ qr: r.qr, secret: r.secret });
+                  } else setError(r.error);
+                });
+              }}
             >
-              {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Smartphone className="h-4 w-4" />} Yoqish
-            </Button>
+              <input
+                type="password"
+                value={pw}
+                onChange={(e) => setPw(e.target.value)}
+                autoComplete="current-password"
+                placeholder="Joriy parolingiz"
+                aria-label="Joriy parol"
+                className="field sm:flex-1"
+                required
+              />
+              <Button type="submit" disabled={pending}>
+                {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Smartphone className="h-4 w-4" />} Yoqish
+              </Button>
+            </form>
             {error && <p className="rounded-field bg-bad-soft px-3 py-2 text-sm font-medium text-bad">{error}</p>}
             <p className="flex items-center gap-1.5 text-xs text-fg-muted">
               <KeyRound className="h-3.5 w-3.5" /> Sizga 8 ta zaxira kod ham beriladi.

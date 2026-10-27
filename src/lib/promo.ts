@@ -33,14 +33,20 @@ export async function releaseOrderPromo(orderId: number, exec: Exec = db) {
  * Saytdan ochilib, 72 soat ichida to'lanmagan buyurtmalarni bekor qilish (band promokodlar bo'shaydi).
  * "To'ladim" bosilganlar 7 kun kutiladi; Payme to'lovi jarayonda bo'lsa tegilmaydi.
  */
+let lastExpire = 0;
 export async function expireStaleOrders() {
+  // Har so'rovda emas, 5 daqiqada bir marta (bazaga ortiqcha yuk bo'lmasin)
+  if (Date.now() - lastExpire < 5 * 60 * 1000) return;
+  lastExpire = Date.now();
   const rows = await db.execute<{ id: number }>(sql`
     update course_orders o set status = 'bekor', note = coalesce(note, '') || ' [to''lanmadi, muddati o''tdi]'
     where o.status = 'kutilmoqda' and o.provider = 'sayt'
       and o.created_at < now() - interval '72 hours'
       -- "To'ladim" bosilgan buyurtma administrator tekshirishi uchun 7 kun saqlanadi
       and (coalesce(o.note, '') not like 'O''quvchi to''laganini bildirdi%' or o.created_at < now() - interval '7 days')
-      and not exists (select 1 from payme_transactions t where t.order_id = o.id and t.state = 1)
+      -- 12 soatdan eski "osilib qolgan" Payme tranzaksiyasi promokodni abadiy band qilib turmaydi
+      and not exists (select 1 from payme_transactions t where t.order_id = o.id and t.state = 1
+                      and t.create_time > (extract(epoch from now()) * 1000 - 12 * 3600 * 1000))
     returning o.id`);
   for (const r of rows) await releaseOrderPromo(r.id);
 }

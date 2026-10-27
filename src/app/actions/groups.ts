@@ -5,7 +5,7 @@ import { groups, courses, enrollments, students } from '@/db/schema';
 import { assertSection } from '@/lib/auth';
 import { run, str, req, int, bool } from '@/lib/action';
 import { DAY_CODES } from '@/lib/dates';
-import { assertBranch, resolveBranch } from '@/lib/branch';
+import { assertBranch, assertStaffFor, resolveBranch } from '@/lib/branch';
 
 function onlyManagers(role: string) {
   if (!['rahbar', 'admin'].includes(role)) throw new Error("Guruhlarni rahbar yoki administrator boshqaradi.");
@@ -37,6 +37,9 @@ export async function saveGroup(id: number | null, fd: FormData) {
       startDate: str(fd, 'startDate'),
       branchId: fd.has('branchId') || !id ? await resolveBranch(int(fd, 'branchId')) : undefined,
     };
+    const branchOf = v.branchId ?? (id ? (await db.select({ b: groups.branchId }).from(groups).where(eq(groups.id, id)))[0]?.b : null);
+    await assertStaffFor(v.teacherId, ['oqituvchi', 'rahbar', 'admin'], branchOf);
+    await assertStaffFor(v.supportId, ['support', 'oqituvchi', 'admin', 'rahbar'], branchOf);
     if (id) await db.update(groups).set(v).where(eq(groups.id, id));
     else await db.insert(groups).values(v);
     return { message: id ? 'Guruh yangilandi' : 'Guruh ochildi' };

@@ -8,7 +8,8 @@ import { andBranch } from '@/lib/branch';
 export const metadata = { title: 'Bitiruvchilar' };
 
 export default async function GraduatesPage() {
-  await requireSection('graduates');
+  const user = await requireSection('graduates');
+  const mine = user.role === 'oqituvchi' || user.role === 'support';
   const scope = await getBranchScope();
   const rows = await db.execute<{
     id: number; name: string; phone: string | null; graduated_at: string | null; course: string | null; color: string | null;
@@ -22,6 +23,7 @@ export default async function GraduatesPage() {
       (select count(*) from results r where r.student_id = s.id)::int results
     from students s left join graduates gr on gr.student_id = s.id
     where s.status = 'bitirgan' ${andBranch('s.branch_id', scope.id)}
+      ${mine ? sql`and exists (select 1 from enrollments e join groups g on g.id = e.group_id where e.student_id = s.id and (g.teacher_id = ${user.id} or g.support_id = ${user.id}))` : sql``}
     order by s.graduated_at desc nulls last`);
   return <GraduatesView rows={[...rows]} />;
 }

@@ -10,7 +10,7 @@ import { expireStaleOrders, releaseOrderPromo, reservePromo } from '@/lib/promo'
 import { notifyTelegram } from '@/lib/payments';
 import { normalizePhone, money } from '@/lib/format';
 import { addDays, today } from '@/lib/dates';
-import { LOCK_MESSAGE, clearHits, clientIp, guardLogin, hashPassword, overLimit, passwordProblem, verifyPassword } from '@/lib/security';
+import { LOCK_MESSAGE, clearHits, clientIp, guardLogin, hashPassword, isTrustedDevice, rememberDevice, overLimit, passwordProblem, verifyPassword } from '@/lib/security';
 
 export type FormState = { error?: string } | undefined;
 
@@ -21,7 +21,7 @@ function safeNext(n: FormDataEntryValue | null) {
 }
 
 export async function registerLearner(_: FormState, fd: FormData): Promise<FormState> {
-  const fullName = String(fd.get('fullName') || '').trim();
+  const fullName = String(fd.get('fullName') || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
   const phone = normalizePhone(String(fd.get('phone') || ''));
   const password = String(fd.get('password') || '');
   if (fullName.length < 3) return { error: "Ism-familiyangizni to'liq yozing." };
@@ -38,8 +38,8 @@ export async function registerLearner(_: FormState, fd: FormData): Promise<FormS
   const v = 0;
   if (ex) {
     // Mavjud raqamni boshqa odam "egallab" ololmasligi uchun: parolni faqat administrator beradi
-    if (ex.passwordHash) return { error: "Bu raqam ro'yxatdan o'tgan. \"Kirish\" bo'limidan foydalaning." };
-    return { error: "Bu raqam bizda allaqachon bor. Parolni administratordan oling (Telegram orqali yozing)." };
+    // Bitta neytral javob: raqam kimga tegishli ekani (markaz o'quvchisimi) oshkor bo'lmaydi
+    return { error: "Bu raqam bilan ro'yxatdan o'tib bo'lmaydi. Hisobingiz bo'lsa \"Kirish\"ni bosing, parol kerak bo'lsa administratorga yozing." };
   } else {
     const [l] = await db.insert(learners).values({ fullName, phone, passwordHash: hash, source: 'Sayt', lastLoginAt: new Date() }).returning({ id: learners.id });
     id = l.id;
@@ -53,18 +53,19 @@ export async function loginLearner(_: FormState, fd: FormData): Promise<FormStat
   const password = String(fd.get('password') || '');
   if (!phone || !password || password.length > 128) return { error: "Telefon raqam yoki parol noto'g'ri." };
   const ip = await clientIp();
-  const g = await guardLogin('learner', phone, ip);
+  const g = await guardLogin('learner', phone, ip, await isTrustedDevice('learner', phone));
   if (g.blocked) return { error: LOCK_MESSAGE };
   const [l] = await db.select().from(learners).where(eq(learners.phone, phone));
   if (!(await verifyPassword(password, l?.passwordHash)) || !l) return { error: "Telefon raqam yoki parol noto'g'ri." };
   await g.success();
   await db.update(learners).set({ lastLoginAt: new Date() }).where(eq(learners.id, l.id));
   await setLearnerCookie(l.id, l.sessionVersion);
+  await rememberDevice('learner', phone);
   redirect(safeNext(fd.get('next')));
 }
 
 export async function logoutLearner() {
-  (await cookies()).delete({ name: LEARNER_COOKIE, path: '/' });
+  (await cookies()).set(LEARNER_COOKIE, '', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: 0 });
   redirect('/akademiya');
 }
 
@@ -198,7 +199,7 @@ export async function uncompleteLesson(lessonId: number) {
 export async function updateProfile(_: FormState, fd: FormData): Promise<FormState> {
   const l = await getLearner();
   if (!l) return { error: 'Avval tizimga kiring.' };
-  const fullName = String(fd.get('fullName') || '').trim();
+  const fullName = String(fd.get('fullName') || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
   if (fullName.length < 3) return { error: "Ismni to'liq yozing." };
   const next = String(fd.get('next') || '');
   const set: Record<string, unknown> = { fullName, email: String(fd.get('email') || '').trim() || null, telegram: String(fd.get('telegram') || '').trim() || null };

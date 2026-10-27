@@ -8,7 +8,7 @@ import { NextResponse } from 'next/server';
 import { and, eq, gte, lte, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { courseOrders, paymeTransactions } from '@/db/schema';
-import { paymeConfig } from '@/lib/payments';
+import { notifyTelegram, paymeConfig } from '@/lib/payments';
 import { markOrderPaid, markOrderRefunded } from '@/lib/order-paid';
 import { auditExternal, safeEqual } from '@/lib/security';
 
@@ -74,12 +74,13 @@ export async function POST(req: Request) {
       return reply(body.id, { result: { allow: true } });
     }
     case 'CreateTransaction': {
+      if (typeof p.id !== 'string' || !p.id || p.id.length > 64 || !Number.isFinite(Number(p.time))) return reply(body.id, { error: E.parse });
       const pid = String(p.id);
       const [tx] = await db.select().from(paymeTransactions).where(eq(paymeTransactions.paymeId, pid));
       if (tx) {
         if (tx.state !== 1) return reply(body.id, { error: E.cantDo });
         if (now - tx.paymeTime > TIMEOUT) {
-          await db.update(paymeTransactions).set({ state: -1, reason: 4, cancelTime: now }).where(eq(paymeTransactions.id, tx.id));
+          await db.update(paymeTransactions).set({ state: -1, reason: 4, cancelTime: now }).where(and(eq(paymeTransactions.id, tx.id), eq(paymeTransactions.state, 1)));
           return reply(body.id, { error: E.cantDo });
         }
         return reply(body.id, { result: { create_time: tx.createTime, transaction: String(tx.id), state: tx.state } });
@@ -88,10 +89,18 @@ export async function POST(req: Request) {
       if (r.error) return reply(body.id, { error: r.error });
       const [active] = await db.select({ id: paymeTransactions.id }).from(paymeTransactions).where(and(eq(paymeTransactions.orderId, r.order!.id), eq(paymeTransactions.state, 1)));
       if (active) return reply(body.id, { error: E.orderBusy });
-      const [n] = await db
+      // Bazadagi unikal indekslar parallel so'rovlarda ham bitta buyurtmaga bitta faol tranzaksiyani kafolatlaydi
+      const ins = await db
         .insert(paymeTransactions)
         .values({ paymeId: pid, orderId: r.order!.id, amount: Number(p.amount), state: 1, paymeTime: Number(p.time) || now, createTime: now })
+        .onConflictDoNothing()
         .returning();
+      if (!ins.length) {
+        const [same] = await db.select().from(paymeTransactions).where(eq(paymeTransactions.paymeId, pid));
+        if (same?.state === 1) return reply(body.id, { result: { create_time: same.createTime, transaction: String(same.id), state: 1 } });
+        return reply(body.id, { error: E.orderBusy });
+      }
+      const n = ins[0];
       return reply(body.id, { result: { create_time: n.createTime, transaction: String(n.id), state: 1 } });
     }
     case 'PerformTransaction': {
@@ -100,11 +109,12 @@ export async function POST(req: Request) {
       if (tx.state === 2) return reply(body.id, { result: { transaction: String(tx.id), perform_time: tx.performTime, state: 2 } });
       if (tx.state !== 1) return reply(body.id, { error: E.cantDo });
       if (now - tx.paymeTime > TIMEOUT) {
-        await db.update(paymeTransactions).set({ state: -1, reason: 4, cancelTime: now }).where(eq(paymeTransactions.id, tx.id));
+        await db.update(paymeTransactions).set({ state: -1, reason: 4, cancelTime: now }).where(and(eq(paymeTransactions.id, tx.id), eq(paymeTransactions.state, 1)));
         return reply(body.id, { error: E.cantDo });
       }
       // Bitta tranzaksiyada: Payme tranzaksiyasi 1→2 va buyurtma kutilmoqda→to'landi. Biri bo'lmasa — ikkalasi ham bekor.
       // Buyurtma shu orada boshqa yo'l bilan (masalan Click) to'langan bo'lsa — ikki marta pul olmaymiz.
+      let paidMsg: string | false = false;
       const done = await db.transaction(async (t) => {
         const moved = await t
           .update(paymeTransactions)
@@ -112,11 +122,12 @@ export async function POST(req: Request) {
           .where(and(eq(paymeTransactions.id, tx.id), eq(paymeTransactions.state, 1)))
           .returning({ id: paymeTransactions.id });
         if (!moved.length) return 'state';
-        if (!(await markOrderPaid(tx.orderId, 'payme', tx.paymeId, t))) {
-          t.rollback();
-        }
+        // Summa ham solishtiriladi: Payme olgan summa (tiyin) buyurtma summasiga teng bo'lishi shart
+        paidMsg = await markOrderPaid(tx.orderId, 'payme', tx.paymeId, Math.round(tx.amount / 100), t, false);
+        if (!paidMsg) t.rollback();
         return 'ok';
       }).catch((e) => (String(e?.message || e).includes('Rollback') ? 'paid' : Promise.reject(e)));
+      if (done === 'ok' && paidMsg) await notifyTelegram(paidMsg);
       if (done !== 'ok') {
         const [again] = await db.select().from(paymeTransactions).where(eq(paymeTransactions.id, tx.id));
         if (again?.state === 2) return reply(body.id, { result: { transaction: String(tx.id), perform_time: again.performTime, state: 2 } });
@@ -164,6 +175,7 @@ export async function POST(req: Request) {
     case 'GetStatement': {
       const from = Number(p.from);
       const to = Number(p.to);
+      if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return reply(body.id, { error: E.parse });
       const rows = await db
         .select()
         .from(paymeTransactions)

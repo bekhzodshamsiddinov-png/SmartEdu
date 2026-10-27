@@ -6,7 +6,7 @@ import { assertSection } from '@/lib/auth';
 import { run, str, req, int } from '@/lib/action';
 import { normalizePhone } from '@/lib/format';
 import { STAGE_INDEX } from '@/lib/constants';
-import { assertBranch, resolveBranch } from '@/lib/branch';
+import { assertBranch, assertStaffFor, resolveBranch } from '@/lib/branch';
 
 export async function saveLead(id: number | null, fd: FormData) {
   return run(async () => {
@@ -22,8 +22,10 @@ export async function saveLead(id: number | null, fd: FormData) {
       note: str(fd, 'note'),
       updatedAt: new Date(),
     };
+    const branchId = id ? (await db.select({ b: leads.branchId }).from(leads).where(eq(leads.id, id)))[0]?.b : await resolveBranch(null);
+    await assertStaffFor(v.assignedToId, ['sotuv', 'admin', 'rahbar', 'marketing'], branchId);
     if (id) await db.update(leads).set(v).where(eq(leads.id, id));
-    else await db.insert(leads).values({ ...v, branchId: await resolveBranch(null) });
+    else await db.insert(leads).values({ ...v, branchId });
     return { message: id ? 'Lid yangilandi' : "Lid qo'shildi" };
   });
 }

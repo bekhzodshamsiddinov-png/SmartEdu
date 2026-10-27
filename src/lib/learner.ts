@@ -8,7 +8,7 @@ import { db } from '@/db';
 import { learners } from '@/db/schema';
 import { authSecret } from './session';
 
-export const LEARNER_COOKIE = 'smartedu_learner';
+export const LEARNER_COOKIE = (process.env.NODE_ENV === 'production' ? '__Host-' : '') + 'smartedu_learner';
 const MAX_AGE = 60 * 60 * 24 * 30;
 
 function secret() {

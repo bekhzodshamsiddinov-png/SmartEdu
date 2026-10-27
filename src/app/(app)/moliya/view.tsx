@@ -36,6 +36,7 @@ export function FinanceView({
   tx,
   ie,
   rec,
+  canReconcile,
   system,
   byCourse,
   byCat,
@@ -54,6 +55,7 @@ export function FinanceView({
   tx: Tx[];
   ie: { tuition: number; online: number; otherIncome: number; income: number; expense: number; profit: number };
   rec: { bank: Record<string, number>; tax: Record<string, number>; note: string | null } | null;
+  canReconcile: boolean;
   system: Record<string, number>;
   byCourse: { name: string; color: string; s: number }[];
   byCat: { category: string; s: number }[];
@@ -223,7 +225,12 @@ export function FinanceView({
         </Card>
       )}
 
-      {tab === 'solishtirma' && <Reconciliation month={month} system={system} rec={rec} multi={branches.length > 1} />}
+      {tab === 'solishtirma' &&
+        (canReconcile ? (
+          <Reconciliation month={month} system={system} rec={rec} multi={branches.length > 1} />
+        ) : (
+          <div className="card px-5 py-10 text-center text-sm text-fg-muted">Bank va soliq solishtirmasi butun kompaniya bo&apos;yicha — uni rahbar yoki filialga biriktirilmagan hisobchi bajaradi.</div>
+        ))}
 
       {tab === 'tahlil' && (
         <div className="grid gap-5 lg:grid-cols-2">
