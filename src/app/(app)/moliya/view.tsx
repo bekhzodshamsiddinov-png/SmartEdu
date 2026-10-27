@@ -11,9 +11,11 @@ import { MoneyBars } from '@/components/charts/money-bars';
 import { deleteTransaction, saveReconciliation, saveTransaction } from '@/app/actions/finance';
 import { money } from '@/lib/format';
 import { addMonths, fmtMonth, fmtShort, thisMonth, today } from '@/lib/dates';
+import { CashboxesTab, type Box, type Transfer } from './cashboxes';
+import { PayrollTab, type PayRow } from './payroll';
 
 const EXPENSE = ['Oylik', 'Ijara', 'Kommunal va internet', 'Marketing', 'Jihozlar', 'Soliqlar', 'Boshqa'];
-const INCOME = ['Boshqa daromad', 'Grant', 'Xizmat (zakaz)', 'Investitsiya'];
+const INCOME = ['Boshqa daromad', 'Grant', 'Xizmat (zakaz)', 'Investitsiya', "Boshlang'ich qoldiq"];
 const RECON = [
   { key: 'kirim', label: 'Kirim' },
   { key: 'oylik', label: 'Oylik fondi' },
@@ -29,7 +31,7 @@ const METHODS = [
   { k: 'karta', l: 'Karta' },
 ];
 
-type Tx = { id: number; branchId: number | null; type: 'kirim' | 'chiqim'; category: string; amount: number; date: string; method: string; counterparty: string | null; document: string | null; note: string | null; by: string | null };
+type Tx = { id: number; branchId: number | null; cashboxId: number | null; type: 'kirim' | 'chiqim'; category: string; amount: number; date: string; method: string; counterparty: string | null; document: string | null; note: string | null; by: string | null };
 
 export function FinanceView({
   month,
@@ -48,7 +50,19 @@ export function FinanceView({
   isBoss,
   branches,
   currentBranch,
+  boxes,
+  transfers,
+  staff,
+  payrollRows,
+  salaryDay,
+  me,
 }: {
+  boxes: Box[];
+  transfers: Transfer[];
+  staff: { id: number; name: string }[];
+  payrollRows: PayRow[];
+  salaryDay: number;
+  me: { id: number; role: string };
   branches: { id: number; name: string }[];
   currentBranch: number | null;
   month: string;
@@ -62,7 +76,7 @@ export function FinanceView({
   series: { label: string; kirim: number; xarajat: number }[];
   reservePercent: number;
   payMethods: Record<string, number>;
-  tab: 'jurnal' | 'solishtirma' | 'tahlil';
+  tab: 'jurnal' | 'solishtirma' | 'tahlil' | 'kassalar' | 'oylik';
   openNew: boolean;
   isBoss: boolean;
 }) {
@@ -102,10 +116,12 @@ export function FinanceView({
       />
 
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="inline-flex rounded-field border border-line bg-white p-1">
+        <div className="flex max-w-full overflow-x-auto rounded-field border border-line bg-white p-1 sm:inline-flex">
           {[
             { k: 'jurnal', l: 'Kirim-chiqim' },
             { k: 'solishtirma', l: 'Oylik solishtirma' },
+            { k: 'kassalar', l: 'Kassalar' },
+            { k: 'oylik', l: 'Oylik' },
             { k: 'tahlil', l: 'Tahlil' },
           ].map((t) => (
             <Link key={t.k} href={`${path}?oy=${month}&tab=${t.k}`} className={cn('rounded-[7px] px-3.5 py-1.5 text-[13px] font-bold', tab === t.k ? 'bg-ink text-white' : 'text-fg-muted')}>
@@ -225,6 +241,9 @@ export function FinanceView({
         </Card>
       )}
 
+      {tab === 'kassalar' && <CashboxesTab boxes={boxes} transfers={transfers} staff={staff} branches={branches} me={me} />}
+      {tab === 'oylik' && <PayrollTab month={month} rows={payrollRows} boxes={boxes.filter((b) => b.active)} salaryDay={salaryDay} />}
+
       {tab === 'solishtirma' &&
         (canReconcile ? (
           <Reconciliation month={month} system={system} rec={rec} multi={branches.length > 1} />
@@ -252,13 +271,13 @@ export function FinanceView({
       )}
 
       <Modal open={!!edit} onClose={close} title={edit === 'kirim' ? 'Boshqa kirim' : edit === 'chiqim' ? 'Xarajat kiritish' : 'Yozuvni tahrirlash'} sub={edit === 'kirim' ? "O'quvchi to'lovlari To'lovlar bo'limida kiritiladi" : undefined}>
-        {edit && <TxForm t={typeof edit === 'object' ? edit : null} type={typeof edit === 'object' ? edit.type : edit} branches={branches} currentBranch={currentBranch} onDone={close} />}
+        {edit && <TxForm boxes={boxes.filter((b) => b.active)} t={typeof edit === 'object' ? edit : null} type={typeof edit === 'object' ? edit.type : edit} branches={branches} currentBranch={currentBranch} onDone={close} />}
       </Modal>
     </>
   );
 }
 
-function TxForm({ t, type, branches, currentBranch, onDone }: { t: (Tx & { branchId?: number | null }) | null; type: 'kirim' | 'chiqim'; branches: { id: number; name: string }[]; currentBranch: number | null; onDone: () => void }) {
+function TxForm({ t, type, branches, currentBranch, boxes, onDone }: { boxes: Box[]; t: (Tx & { branchId?: number | null; cashboxId?: number | null }) | null; type: 'kirim' | 'chiqim'; branches: { id: number; name: string }[]; currentBranch: number | null; onDone: () => void }) {
   const cats = type === 'kirim' ? INCOME : EXPENSE;
   return (
     <ActionForm action={saveTransaction.bind(null, t?.id ?? null)} onDone={onDone} onCancel={onDone}>
@@ -293,6 +312,17 @@ function TxForm({ t, type, branches, currentBranch, onDone }: { t: (Tx & { branc
           <input name="counterparty" defaultValue={t?.counterparty ?? ''} className="field" placeholder="Masalan: Ijara beruvchi, Uztelecom" />
         </Field>
       </div>
+      {boxes.length > 1 && (
+        <Field label="Kassa">
+          <select name="cashboxId" defaultValue={t?.cashboxId ?? boxes.find((b) => b.isMain)?.id} className="field">
+            {boxes.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
       <Field label="Hujjat" hint="Shartnoma, hisob-faktura yoki chek raqami. Soliq solishtirmasi uchun muhim.">
         <input name="document" defaultValue={t?.document ?? ''} className="field" placeholder="Masalan: Shartnoma No 12, hisob-faktura 0045" />
       </Field>

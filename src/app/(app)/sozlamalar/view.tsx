@@ -2,7 +2,7 @@
 import { Download, Database, ShieldCheck } from 'lucide-react';
 import { Card, CardHeader, Field } from '@/components/ui';
 import { ActionForm } from '@/components/action-form';
-import { saveSettings, saveAcademySettings, logoutEverywhere } from '@/app/actions/staff';
+import { saveSettings, saveAcademySettings, logoutEverywhere, saveReason, toggleReason } from '@/app/actions/staff';
 import { saveBranch, toggleBranch } from '@/app/actions/branch';
 import { useEffect, useState } from 'react';
 import { Building2, Pencil, Plus, Power } from 'lucide-react';
@@ -29,14 +29,15 @@ export type AuditRow = { id: number; at: string; actorName: string | null; actor
 
 type Academy = { payCard: string | null; payCardHolder: string | null; telegram: string | null; instagram: string | null; academyTagline: string | null };
 
-export function SettingsView({ s, counts, branches, academy, integrations, auditRows }: { auditRows: AuditRow[]; academy: Academy; integrations: { click: boolean; payme: boolean; telegram: boolean; bunny: boolean }; branches: Br[]; s: { centerName: string; phone: string | null; address: string | null; paymentDueDay: number; salaryDay: number; reservePercent: number }; counts: Record<string, number> }) {
+export function SettingsView({ s, counts, branches, academy, integrations, auditRows, reasonRows }: { auditRows: AuditRow[]; academy: Academy; integrations: { click: boolean; payme: boolean; telegram: boolean; bunny: boolean }; branches: Br[]; s: { centerName: string; phone: string | null; address: string | null; paymentDueDay: number; salaryDay: number; reservePercent: number; billingDefault: string; chargeAbsent: boolean; prorateFirstMonth: boolean }; reasonRows: ReasonRow[]; counts: Record<string, number> }) {
   return (
     <>
       <PageHeader title="Sozlamalar" sub="Markaz ma'lumotlari, to'lov qoidalari va ma'lumotlar zaxirasi" />
       <div className="grid gap-5 lg:grid-cols-2">
-        <div className="space-y-5">
+        <div className="min-w-0 space-y-5">
         <AcademyCard a={academy} integrations={integrations} />
         <BranchesCard branches={branches} />
+        <ReasonsCard rows={reasonRows} />
         <Card>
           <CardHeader title="Markaz va qoidalar" />
           <div className="px-5 pb-5">
@@ -63,11 +64,34 @@ export function SettingsView({ s, counts, branches, academy, integrations, audit
                   <input type="number" name="reservePercent" min={0} max={50} defaultValue={s.reservePercent} className="field" />
                 </Field>
               </div>
+              <div className="rounded-xl border border-line p-4">
+                <div className="mb-3 text-sm font-bold">O&apos;quvchidan to&apos;lov qanday yechiladi</div>
+                <Field label="Yangi guruhlar uchun" hint="Har bir guruhda alohida o'zgartirish mumkin">
+                  <select name="billingDefault" defaultValue={s.billingDefault} className="field">
+                    <option value="oylik">Oylik — har oy boshida to&apos;liq narx</option>
+                    <option value="dars">Dars bo&apos;yicha — faqat o&apos;tilgan darslar uchun</option>
+                  </select>
+                </Field>
+                <label className="mt-3 flex items-start gap-2.5 text-sm">
+                  <input type="checkbox" name="chargeAbsent" defaultChecked={s.chargeAbsent} className="mt-0.5 h-4 w-4 accent-[#0E7C6B]" />
+                  <span>
+                    <b>Sababsiz kelmagan dars ham yechilsin</b>
+                    <span className="block text-xs text-fg-muted">Faqat &quot;dars bo&apos;yicha&quot; guruhlarda. Sababli kelmaganlar uchun — har bir sababda alohida belgilanadi.</span>
+                  </span>
+                </label>
+                <label className="mt-3 flex items-start gap-2.5 text-sm">
+                  <input type="checkbox" name="prorateFirstMonth" defaultChecked={s.prorateFirstMonth} className="mt-0.5 h-4 w-4 accent-[#0E7C6B]" />
+                  <span>
+                    <b>Oy o&apos;rtasida qo&apos;shilsa — qisman hisoblansin</b>
+                    <span className="block text-xs text-fg-muted">&quot;Oylik&quot; guruhlarda birinchi oy faqat qolgan darslar uchun yechiladi.</span>
+                  </span>
+                </label>
+              </div>
             </ActionForm>
           </div>
         </Card>
         </div>
-        <div className="space-y-5">
+        <div className="min-w-0 space-y-5">
           <Card>
             <CardHeader title="Ma'lumotlar sizniki" sub="Barcha yozuvlar o'zingizning Postgres bazangizda saqlanadi" />
             <div className="px-5 pb-5">
@@ -104,6 +128,85 @@ export function SettingsView({ s, counts, branches, academy, integrations, audit
         </div>
       </div>
     </>
+  );
+}
+
+export type ReasonRow = { id: number; kind: string; title: string; charges: boolean; active: boolean; used: number };
+
+const REASON_TABS = [
+  { k: 'davomat', t: 'Davomat', hint: "Sababli kelmaganda tanlanadi. Belgilansa — shu sabab bilan ham dars puli yechiladi." },
+  { k: 'ketdi', t: 'Ketish', hint: "O'quvchi markazdan ketganda tanlanadi — ketish tahlili shu asosda." },
+  { k: 'muzlatish', t: 'Muzlatish', hint: "O'qishni vaqtincha to'xtatishda tanlanadi." },
+  { k: 'lid', t: 'Lid rad etildi', hint: 'Lid sotuvga aylanmaganda tanlanadi.' },
+];
+
+function ReasonsCard({ rows }: { rows: ReasonRow[] }) {
+  const [tab, setTab] = useState('davomat');
+  const [edit, setEdit] = useState<ReasonRow | 'new' | null>(null);
+  const cur = REASON_TABS.find((t) => t.k === tab)!;
+  const list = rows.filter((r) => r.kind === tab);
+  return (
+    <Card>
+      <CardHeader
+        title="Sabablar"
+        sub="Bir xil sabablar — aniq tahlil. Xodimlar ro'yxatdan tanlaydi, erkin matn yozmaydi."
+        action={
+          <Button size="sm" variant="secondary" onClick={() => setEdit('new')}>
+            <Plus className="h-4 w-4" /> Sabab
+          </Button>
+        }
+      />
+      <div className="px-5">
+        <div className="flex gap-1 overflow-x-auto rounded-field border border-line bg-white p-1">
+          {REASON_TABS.map((t) => (
+            <button key={t.k} type="button" onClick={() => setTab(t.k)} className={`shrink-0 rounded-[7px] px-3 py-1.5 text-[13px] font-bold ${tab === t.k ? 'bg-ink text-white' : 'text-fg-muted'}`}>
+              {t.t}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-fg-muted">{cur.hint}</p>
+      </div>
+      <ul className="mt-2 divide-y divide-line border-t border-line">
+        {list.length === 0 && <li className="px-5 py-5 text-center text-sm text-fg-muted">Hozircha sabab yo&apos;q</li>}
+        {list.map((r) => (
+          <li key={r.id} className={`flex items-center gap-3 px-5 py-2.5 ${r.active ? '' : 'opacity-50'}`}>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+                {r.title}
+                {r.kind === 'davomat' && (r.charges ? <Badge tone="warn">Pul yechiladi</Badge> : <Badge tone="good">Pul yechilmaydi</Badge>)}
+                {!r.active && <Badge>O&apos;chirilgan</Badge>}
+              </div>
+              {r.used > 0 && <div className="text-xs text-fg-muted">{r.used} marta ishlatilgan</div>}
+            </div>
+            <Button size="icon" variant="ghost" onClick={() => setEdit(r)} aria-label="Tahrirlash">
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <ActionButton variant="ghost" size="icon" action={() => toggleReason(r.id)} title={r.active ? "O'chirish" : 'Yoqish'}>
+              <Power className="h-4 w-4" />
+            </ActionButton>
+          </li>
+        ))}
+      </ul>
+      <Modal open={!!edit} onClose={() => setEdit(null)} title={edit === 'new' ? 'Yangi sabab' : 'Sababni tahrirlash'} size="sm">
+        {edit && (
+          <ActionForm action={saveReason.bind(null, edit === 'new' ? null : edit.id)} onDone={() => setEdit(null)} onCancel={() => setEdit(null)}>
+            <input type="hidden" name="kind" value={edit === 'new' ? tab : edit.kind} />
+            <Field label="Sabab">
+              <input name="title" defaultValue={edit === 'new' ? '' : edit.title} className="field" maxLength={80} required />
+            </Field>
+            {(edit === 'new' ? tab : edit.kind) === 'davomat' && (
+              <label className="flex items-start gap-2.5 text-sm">
+                <input type="checkbox" name="charges" defaultChecked={edit !== 'new' && edit.charges} className="mt-0.5 h-4 w-4 accent-[#0E7C6B]" />
+                <span>
+                  <b>Bu sabab bilan kelmagan dars uchun ham pul yechilsin</b>
+                  <span className="block text-xs text-fg-muted">Masalan: &quot;Ogohlantirib kelmadi&quot; — yechiladi, &quot;Kasal&quot; — yechilmaydi.</span>
+                </span>
+              </label>
+            )}
+          </ActionForm>
+        )}
+      </Modal>
+    </Card>
   );
 }
 

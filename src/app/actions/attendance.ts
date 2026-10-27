@@ -1,13 +1,14 @@
 'use server';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
+import { syncLessonCharges } from '@/lib/billing';
 import { db } from '@/db';
-import { attendance, lessons, groups, notes } from '@/db/schema';
+import { attendance, lessons, groups, notes, reasons } from '@/db/schema';
 import { assertSection } from '@/lib/auth';
 import { run } from '@/lib/action';
 import { assertBranch } from '@/lib/branch';
 import { addDays, today } from '@/lib/dates';
 
-type Mark = { studentId: number; status: 'keldi' | 'kelmadi' | 'kechikdi' | 'sababli'; reason?: string | null };
+type Mark = { studentId: number; status: 'keldi' | 'kelmadi' | 'kechikdi' | 'sababli'; reason?: string | null; reasonId?: number | null };
 
 export async function saveAttendance(input: {
   groupId: number;
@@ -36,15 +37,23 @@ export async function saveAttendance(input: {
     input.marks = input.marks.filter((m) => enrolled.has(Number(m.studentId)) && STATUSES.includes(String(m.status)));
     if (!input.marks.length) throw new Error("Guruhda o'quvchi yo'q.");
     if (input.topic && input.topic.length > 300) input.topic = input.topic.slice(0, 300);
+    // Sabab faqat ma'lumotnomadagi davomat sabablaridan bo'lishi mumkin
+    const validReasons = new Set(
+      (await db.select({ id: reasons.id }).from(reasons).where(and(eq(reasons.kind, 'davomat'), eq(reasons.active, true)))).map((r) => r.id),
+    );
     for (const m of input.marks) {
+      const reasonId = m.status === 'sababli' && m.reasonId && validReasons.has(Number(m.reasonId)) ? Number(m.reasonId) : null;
+      const reason = m.reason ? String(m.reason).slice(0, 200) : null;
       await db
         .insert(attendance)
-        .values({ groupId: input.groupId, studentId: m.studentId, date: input.date, status: m.status, reason: m.reason || null, markedById: u.id })
+        .values({ groupId: input.groupId, studentId: m.studentId, date: input.date, status: m.status, reason, reasonId, markedById: u.id })
         .onConflictDoUpdate({
           target: [attendance.groupId, attendance.studentId, attendance.date],
-          set: { status: m.status, reason: m.reason || null, markedById: u.id },
+          set: { status: m.status, reason, reasonId, markedById: u.id },
         });
     }
+    // "Dars bo'yicha" hisobdagi guruhda har bir dars uchun pul yechiladi
+    await syncLessonCharges(input.groupId, input.date, u.id);
     const teacherStatus = u.role === 'oqituvchi' || u.role === 'support' ? undefined : input.teacherStatus;
     await db
       .insert(lessons)

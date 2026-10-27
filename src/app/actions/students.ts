@@ -8,6 +8,7 @@ import { normalizePhone } from '@/lib/format';
 import { today } from '@/lib/dates';
 import { assertBranch, resolveBranch } from '@/lib/branch';
 import { audit } from '@/lib/security';
+import { ensureMonthlyCharges, syncCurrentMonthFee } from '@/lib/billing';
 
 async function feeFor(groupId: number) {
   const [g] = await db
@@ -54,6 +55,7 @@ export async function createStudent(fd: FormData) {
       if (custom !== null && custom < 0) throw new Error("Oylik to'lov manfiy bo'lmaydi.");
       const fee = custom ?? (await feeFor(groupId));
       await db.insert(enrollments).values({ studentId: s.id, groupId, monthlyFee: fee, startDate: str(fd, 'startDate') || joinedAt });
+      await ensureMonthlyCharges(true);
     }
     const leadId = int(fd, 'leadId');
     if (leadId) await db.update(leads).set({ studentId: s.id, stage: 'tolov_qildi', maxStage: 4, updatedAt: new Date() }).where(eq(leads.id, leadId));
@@ -135,11 +137,13 @@ export async function changeStatus(id: number, fd: FormData) {
       return { message: "Bitiruvchilar ro'yxatiga qo'shildi" };
     }
     if (status === 'muzlatilgan') {
-      await db.update(students).set({ status }).where(eq(students.id, id));
+      const until = str(fd, 'freezeUntil');
+      if (!until || !/^\d{4}-\d{2}-\d{2}$/.test(until) || until < date) throw new Error('Qaytish sanasini kiriting.');
+      await db.update(students).set({ status, freezeUntil: until, leftReason: req(fd, 'freezeReason', 'Muzlatish sababi').slice(0, 80) }).where(eq(students.id, id));
       await db.update(enrollments).set({ active: false, endDate: date }).where(and(eq(enrollments.studentId, id), isNull(enrollments.endDate)));
       return { message: "O'qish vaqtincha to'xtatildi" };
     }
-    await db.update(students).set({ status, leftAt: null, leftReason: null }).where(eq(students.id, id));
+    await db.update(students).set({ status, leftAt: null, leftReason: null, freezeUntil: null }).where(eq(students.id, id));
     // O'qituvchi guruhga qo'sha olmaydi (to'lov hisoblanishi boshlanadi)
     const groupId = u.role === 'oqituvchi' || u.role === 'support' ? null : int(fd, 'groupId');
     if (groupId) {
@@ -147,6 +151,7 @@ export async function changeStatus(id: number, fd: FormData) {
       if (custom !== null && custom < 0) throw new Error("Oylik to'lov manfiy bo'lmaydi.");
       const fee = custom ?? (await feeFor(groupId));
       await db.insert(enrollments).values({ studentId: id, groupId, monthlyFee: fee, startDate: date });
+      await ensureMonthlyCharges(true);
     }
     return { message: status === 'xavf' ? 'Xavf ostida deb belgilandi' : "O'quvchi faol" };
   });
@@ -178,6 +183,7 @@ export async function enroll(studentId: number, fd: FormData) {
     if (custom !== null && custom < 0) throw new Error("Oylik to'lov manfiy bo'lmaydi.");
     const fee = custom ?? (await feeFor(groupId));
     await db.insert(enrollments).values({ studentId, groupId, monthlyFee: fee, startDate: str(fd, 'startDate') || today() });
+      await ensureMonthlyCharges(true);
     const [g] = await db.select({ b: groups.branchId }).from(groups).where(eq(groups.id, groupId));
     if (g?.b) await db.update(students).set({ branchId: g.b }).where(eq(students.id, studentId));
     await db.update(students).set({ status: 'faol' }).where(and(eq(students.id, studentId), eq(students.status, 'muzlatilgan')));
@@ -203,6 +209,7 @@ export async function updateFee(enrollmentId: number, fd: FormData) {
     const fee = int(fd, 'monthlyFee');
     if (fee === null || fee < 0) throw new Error("Oylik to'lovni kiriting.");
     await db.update(enrollments).set({ monthlyFee: fee }).where(eq(enrollments.id, enrollmentId));
+    await syncCurrentMonthFee(enrollmentId, fee);
     return { message: "Oylik to'lov yangilandi" };
   });
 }

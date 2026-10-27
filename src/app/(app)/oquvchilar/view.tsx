@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { Search, UserPlus, Users, Wallet, Pencil, ArrowRightLeft, Phone, Plus, Trash2, Download, LogOut as LeaveIcon } from 'lucide-react';
+import { Search, UserPlus, Users, Wallet, Pencil, ArrowRightLeft, Phone, Plus, Trash2, Download, LogOut as LeaveIcon, Receipt } from 'lucide-react';
 import type { Role } from '@/db/schema';
 import { Avatar, Badge, Button, Card, Empty, Field, PageHeader, cn } from '@/components/ui';
 import { Drawer, Modal } from '@/components/modal';
@@ -9,7 +9,7 @@ import { ActionButton, ActionForm } from '@/components/action-form';
 import { MoneyInput } from '@/components/money-input';
 import { EditStudentForm, GroupSelect, NewStudentForm, PaymentForm, StatusForm, type GroupOpt } from '@/components/forms';
 import { addGrade, addNote, addResult, deleteStudent, endEnrollment, enroll, updateFee, updateReturn } from '@/app/actions/students';
-import { deletePayment } from '@/app/actions/payments';
+import { CancelPaymentButton } from '@/components/cancel-payment';
 import { ATT_LABEL, NOTE_KINDS, PAY_METHOD_LABEL, RESULT_TYPES, RETURN_RESULTS, STUDENT_STATUS } from '@/lib/constants';
 import { money, phone } from '@/lib/format';
 import { fmtDate, fmtMonth, fmtShort, relative, today } from '@/lib/dates';
@@ -31,13 +31,15 @@ export type StudentRow = {
 export type Profile = {
   student: Record<string, string | number | null> & { id: number; fullName: string; status: keyof typeof STUDENT_STATUS };
   enrollments: { id: number; group: string; groupId: number; course: string; color: string; fee: number; startDate: string; endDate: string | null; active: boolean }[];
-  payments: { id: number; amount: number; method: string; paidAt: string; forMonth: string | null; note: string | null; by: string | null }[];
+  payments: { id: number; amount: number; method: string; paidAt: string; forMonth: string | null; note: string | null; by: string | null; cancelled: boolean; cancelReason: string | null }[];
   attendance: { id: number; date: string; status: string; reason: string | null; group: string }[];
   grades: { id: number; period: string; score: number; comment: string | null; by: string | null }[];
   notes: { id: number; kind: string; text: string; createdAt: string; by: string | null }[];
   results: { id: number; type: string; title: string; amount: number | null; date: string; note: string | null }[];
   balance: { charged: number; paid: number; balance: number; fee: number };
   attRate: number | null;
+  ledger: { id: number; date: string; kind: string; amount: number; note: string | null; grp: string | null; status: string | null }[];
+  freezeReasons: string[];
 };
 
 const FILTERS = [
@@ -302,6 +304,64 @@ const TABS = [
   { k: 'natija', l: 'Natijalar' },
 ];
 
+const KIND_LABEL: Record<string, string> = { oylik: 'Oylik to\'lov', dars: 'Dars', tuzatish: 'Tuzatish' };
+
+/** Hisob daftari: yechimlar va to'lovlar bitta ro'yxatda, har qatordan keyingi qoldiq bilan */
+function Ledger({ p }: { p: Profile }) {
+  type Row = { key: string; date: string; title: string; sub: string; amount: number };
+  const rows: Row[] = [
+    ...p.ledger.map((c) => ({
+      key: 'c' + c.id,
+      date: c.date,
+      title: c.kind === 'dars' ? `Dars${c.status ? ` (${ATT_LABEL[c.status as keyof typeof ATT_LABEL]?.label.toLowerCase() ?? c.status})` : ''}` : KIND_LABEL[c.kind] ?? c.kind,
+      sub: [c.grp, c.note].filter(Boolean).join(', '),
+      amount: -c.amount,
+    })),
+    ...p.payments.filter((x) => !x.cancelled).map((x) => ({ key: 'p' + x.id, date: x.paidAt, title: "To'lov", sub: PAY_METHOD_LABEL[x.method] ?? x.method, amount: x.amount })),
+  ].sort((a, b) => (a.date === b.date ? (a.amount > b.amount ? 1 : -1) : a.date < b.date ? 1 : -1));
+  // Qoldiq: eng yangi qatorda — joriy balans, pastga qarab orqaga hisoblanadi
+  let run = p.balance.balance;
+  const withBal = rows.map((r) => {
+    const after = run;
+    run -= r.amount;
+    return { ...r, after };
+  });
+  const lessonPrice = p.ledger.find((c) => c.kind === 'dars' && c.amount > 0)?.amount;
+  const bal = p.balance.balance;
+  return (
+    <Section title="Hisob daftari">
+      {bal > 0 && (
+        <p className="border-b border-line bg-good-soft px-4 py-2.5 text-[13px] text-good">
+          Oldindan to&apos;langan: {money(bal)}
+          {lessonPrice ? ` — taxminan ${Math.floor(bal / lessonPrice)} ta darsga yetadi` : p.balance.fee ? ` — taxminan ${(bal / p.balance.fee).toFixed(1)} oyga yetadi` : ''}
+        </p>
+      )}
+      {withBal.length === 0 ? (
+        <p className="px-4 py-4 text-sm text-fg-muted">Hali yozuv yo&apos;q.</p>
+      ) : (
+        <ul className="max-h-[420px] divide-y divide-line overflow-y-auto">
+          {withBal.map((r) => (
+            <li key={r.key} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+              <div className="w-14 shrink-0 text-xs text-fg-muted tnum">{fmtShort(r.date)}</div>
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold">{r.title}</div>
+                {r.sub && <div className="truncate text-xs text-fg-muted">{r.sub}</div>}
+              </div>
+              <div className="text-right tnum">
+                <div className={cn('font-bold', r.amount > 0 ? 'text-good' : r.amount < 0 ? 'text-fg' : 'text-fg-muted')}>
+                  {r.amount > 0 ? '+' : r.amount < 0 ? '−' : ''}
+                  {money(Math.abs(r.amount))}
+                </div>
+                <div className={cn('text-[11px]', r.after < 0 ? 'text-bad' : 'text-fg-muted')}>qoldiq {r.after < 0 ? '−' : ''}{money(Math.abs(r.after))}</div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Section>
+  );
+}
+
 function ProfileDrawer({ p, groups, role, showMoney, onClose }: { p: Profile; groups: GroupOpt[]; role: Role; showMoney: boolean; onClose: () => void }) {
   const s = p.student;
   const [tab, setTab] = useState('umumiy');
@@ -428,6 +488,15 @@ function ProfileDrawer({ p, groups, role, showMoney, onClose }: { p: Profile; gr
               )}
             </Section>
 
+            {s.status === 'muzlatilgan' && (
+              <Section title="Muzlatilgan">
+                <dl className="grid gap-3 px-4 py-4 text-sm sm:grid-cols-2">
+                  <Info label="Sababi" value={s.leftReason as string} />
+                  <Info label="Qaytish sanasi" value={s.freezeUntil ? fmtDate(s.freezeUntil as string) : null} />
+                </dl>
+              </Section>
+            )}
+
             {s.status === 'ketgan' && (
               <Section
                 title="Ketish ma'lumoti"
@@ -480,9 +549,13 @@ function ProfileDrawer({ p, groups, role, showMoney, onClose }: { p: Profile; gr
               ) : (
                 <ul className="divide-y divide-line">
                   {p.payments.map((x) => (
-                    <li key={x.id} className="flex items-center gap-3 px-4 py-3">
+                    <li key={x.id} className={`flex items-center gap-3 px-4 py-3 ${x.cancelled ? 'opacity-60' : ''}`}>
                       <div className="min-w-0 flex-1">
-                        <div className="text-sm font-bold tnum">{money(x.amount)}</div>
+                        <div className="flex items-center gap-2 text-sm font-bold tnum">
+                          <span className={x.cancelled ? 'line-through' : ''}>{money(x.amount)}</span>
+                          {x.cancelled && <Badge tone="bad">Bekor qilingan</Badge>}
+                        </div>
+                        {x.cancelled && x.cancelReason && <div className="text-xs text-bad">Sabab: {x.cancelReason}</div>}
                         <div className="text-xs text-fg-muted">
                           {fmtDate(x.paidAt)}, {PAY_METHOD_LABEL[x.method]}
                           {x.forMonth && `, ${fmtMonth(x.forMonth).toLowerCase()} uchun`}
@@ -490,17 +563,18 @@ function ProfileDrawer({ p, groups, role, showMoney, onClose }: { p: Profile; gr
                           {x.note && `, ${x.note}`}
                         </div>
                       </div>
-                      {role === 'rahbar' && (
-                        <ActionButton variant="ghost" size="icon" action={() => deletePayment(x.id)} confirm="Bu to'lov bekor qilinsinmi?" title="Bekor qilish">
-                          <Trash2 className="h-4 w-4" />
-                        </ActionButton>
+                      {!x.cancelled && (
+                        <a href={`/chek/${x.id}`} target="_blank" rel="noreferrer" className="rounded-lg p-2 text-fg-muted hover:bg-canvas hover:text-fg" title="Chek" aria-label="Chek chiqarish">
+                          <Receipt className="h-4 w-4" />
+                        </a>
                       )}
+                      {role === 'rahbar' && !x.cancelled && <CancelPaymentButton id={x.id} amount={x.amount} who={fmtShort(x.paidAt)} />}
                     </li>
                   ))}
                 </ul>
               )}
             </Section>
-            <p className="text-xs text-fg-muted">To&apos;lov har oyning boshida oldindan hisoblanadi: guruhdagi har bir oy uchun oylik to&apos;lov qo&apos;shiladi.</p>
+            <Ledger p={p} />
           </>
         )}
 
@@ -630,7 +704,7 @@ function ProfileDrawer({ p, groups, role, showMoney, onClose }: { p: Profile; gr
         />
       </Modal>
       <Modal open={modal === 'status'} onClose={() => setModal(null)} title="Holatni o'zgartirish" sub={s.fullName}>
-        <StatusForm studentId={s.id} current={s.status} groups={groups} onDone={() => setModal(null)} onCancel={() => setModal(null)} />
+        <StatusForm studentId={s.id} current={s.status} groups={groups} freezeReasons={p.freezeReasons} onDone={() => setModal(null)} onCancel={() => setModal(null)} />
       </Modal>
       <Modal open={modal === 'edit'} onClose={() => setModal(null)} title="Ma'lumotlarni tahrirlash">
         <EditStudentForm s={s} onDone={() => setModal(null)} onCancel={() => setModal(null)} />

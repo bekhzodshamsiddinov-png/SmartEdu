@@ -2,17 +2,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { Wallet, Plus, Phone, BellRing, ChevronLeft, ChevronRight, Trash2, Download } from 'lucide-react';
+import { Wallet, Plus, Phone, BellRing, ChevronLeft, ChevronRight, Download, Receipt } from 'lucide-react';
 import { Badge, Button, Card, Empty, PageHeader, Stat, cn } from '@/components/ui';
 import { Modal } from '@/components/modal';
 import { ActionButton } from '@/components/action-form';
 import { PaymentForm, type StudentOpt } from '@/components/forms';
-import { deletePayment, logReminder } from '@/app/actions/payments';
+import { logReminder } from '@/app/actions/payments';
+import { CancelPaymentButton } from '@/components/cancel-payment';
 import { PAY_METHOD_LABEL, PAY_METHODS } from '@/lib/constants';
 import { money, phone } from '@/lib/format';
 import { addMonths, fmtDate, fmtMonth, fmtShort, thisMonth, today } from '@/lib/dates';
 
-type Pay = { id: number; amount: number; method: string; paidAt: string; forMonth: string | null; note: string | null; studentId: number; student: string; by: string | null };
+type Pay = { id: number; amount: number; method: string; paidAt: string; forMonth: string | null; note: string | null; studentId: number; student: string; by: string | null; cancelled: boolean; cancelReason: string | null };
 type Debtor = { id: number; name: string; phone: string | null; parentName: string | null; debt: number; months: number; fee: number; lastPaid: string | null };
 
 export function PaymentsView({ month, list, students, debtors, dueDay, tab, openNew, isBoss }: { month: string; list: Pay[]; students: StudentOpt[]; debtors: Debtor[]; dueDay: number; tab: 'tolovlar' | 'qarzdorlar'; openNew: boolean; isBoss: boolean }) {
@@ -22,12 +23,13 @@ export function PaymentsView({ month, list, students, debtors, dueDay, tab, open
   const [method, setMethod] = useState('');
   useEffect(() => setOpen(openNew ? true : null), [openNew]);
   const shown = list.filter((p) => !method || p.method === method);
-  const total = list.reduce((s, p) => s + p.amount, 0);
+  const live = list.filter((p) => !p.cancelled);
+  const total = live.reduce((s, p) => s + p.amount, 0);
   const byMethod = useMemo(() => {
     const m: Record<string, number> = {};
-    for (const p of list) m[p.method] = (m[p.method] ?? 0) + p.amount;
+    for (const p of live) m[p.method] = (m[p.method] ?? 0) + p.amount;
     return m;
-  }, [list]);
+  }, [live]);
   const debtSum = debtors.reduce((s, d) => s + d.debt, 0);
   const cash = byMethod.naqd ?? 0;
   const go = (q: string) => router.push(`${path}?${q}`, { scroll: false });
@@ -61,7 +63,7 @@ export function PaymentsView({ month, list, students, debtors, dueDay, tab, open
         }
       />
       <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label={`Tushum, ${fmtMonth(month).toLowerCase()}`} value={money(total, false)} hint={`${list.length} ta to'lov, so'm`} />
+        <Stat label={`Tushum, ${fmtMonth(month).toLowerCase()}`} value={money(total, false)} hint={`${live.length} ta to'lov, so'm`} />
         <Stat label="Onlayn va karta" value={money(total - cash, false)} hint={total ? `${Math.round(((total - cash) / total) * 100)}% naqdsiz` : 'so\'m'} />
         <Stat label="Naqd" value={money(cash, false)} hint="Kassaga topshirilishi kerak" />
         <Stat label="Umumiy qarzdorlik" value={money(debtSum, false)} tone={debtSum ? 'bad' : 'neutral'} hint={`${debtors.length} ta o'quvchi`} href={`${path}?tab=qarzdorlar`} />
@@ -114,32 +116,36 @@ export function PaymentsView({ month, list, students, debtors, dueDay, tab, open
                     <th className="th">Qaysi oy</th>
                     <th className="th">Qabul qildi</th>
                     <th className="th text-right">Summa</th>
-                    {isBoss && <th className="th" />}
+                    <th className="th" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
                   {shown.map((p) => (
-                    <tr key={p.id} className="hover:bg-canvas/60">
+                    <tr key={p.id} className={cn('hover:bg-canvas/60', p.cancelled && 'opacity-55')}>
                       <td className="td text-fg-muted">{fmtShort(p.paidAt)}</td>
                       <td className="td">
                         <Link href={`/oquvchilar?id=${p.studentId}`} className="font-bold hover:text-brand">
                           {p.student}
                         </Link>
                         {p.note && <div className="text-xs text-fg-muted">{p.note}</div>}
+                        {p.cancelled && <div className="text-xs font-semibold text-bad">Bekor qilingan{p.cancelReason ? `: ${p.cancelReason}` : ''}</div>}
                       </td>
                       <td className="td">
                         <Badge tone={p.method === 'naqd' ? 'warn' : 'info'}>{PAY_METHOD_LABEL[p.method]}</Badge>
                       </td>
                       <td className="td text-fg-muted">{p.forMonth ? fmtMonth(p.forMonth) : '—'}</td>
                       <td className="td text-fg-muted">{p.by ?? '—'}</td>
-                      <td className="td text-right font-bold tnum">{money(p.amount)}</td>
-                      {isBoss && (
-                        <td className="td text-right">
-                          <ActionButton variant="ghost" size="icon" action={() => deletePayment(p.id)} confirm="To'lov bekor qilinsinmi?" title="Bekor qilish">
-                            <Trash2 className="h-4 w-4" />
-                          </ActionButton>
-                        </td>
-                      )}
+                      <td className={cn('td text-right font-bold tnum', p.cancelled && 'line-through')}>{money(p.amount)}</td>
+                      <td className="td text-right">
+                        <div className="flex justify-end">
+                          {!p.cancelled && (
+                            <a href={`/chek/${p.id}`} target="_blank" rel="noreferrer" className="rounded-lg p-2 text-fg-muted hover:bg-canvas hover:text-fg" title="Chek" aria-label="Chek chiqarish">
+                              <Receipt className="h-4 w-4" />
+                            </a>
+                          )}
+                          {isBoss && !p.cancelled && <CancelPaymentButton id={p.id} amount={p.amount} who={p.student} />}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -148,8 +154,8 @@ export function PaymentsView({ month, list, students, debtors, dueDay, tab, open
                     <td className="td font-bold" colSpan={5}>
                       Jami
                     </td>
-                    <td className="td text-right font-extrabold tnum">{money(shown.reduce((s, p) => s + p.amount, 0))}</td>
-                    {isBoss && <td />}
+                    <td className="td text-right font-extrabold tnum">{money(shown.filter((p) => !p.cancelled).reduce((s, p) => s + p.amount, 0))}</td>
+                    <td />
                   </tr>
                 </tfoot>
               </table>

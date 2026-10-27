@@ -205,7 +205,7 @@ export function PaymentForm({
   );
 }
 
-export function StatusForm({ studentId, current, groups, onDone, onCancel }: { studentId: number; current: string; groups: GroupOpt[]; onDone?: () => void; onCancel?: () => void }) {
+export function StatusForm({ studentId, current, groups, freezeReasons = [], onDone, onCancel }: { studentId: number; current: string; groups: GroupOpt[]; freezeReasons?: string[]; onDone?: () => void; onCancel?: () => void }) {
   const [status, setStatus] = useState(current === 'ketgan' || current === 'bitirgan' || current === 'muzlatilgan' ? 'faol' : 'ketgan');
   const [reason, setReason] = useState('');
   const fix = LEAVE_REASONS.find((r) => r.label === reason)?.fix;
@@ -255,6 +255,22 @@ export function StatusForm({ studentId, current, groups, onDone, onCancel }: { s
               ))}
             </select>
           </Field>
+        </>
+      )}
+      {status === 'muzlatilgan' && (
+        <>
+          <Field label="Sabab">
+            <select name="freezeReason" className="field" required defaultValue="">
+              <option value="">Sababni tanlang</option>
+              {(freezeReasons.length ? freezeReasons : ['Kasallik', 'Safar', 'Imtihonlar', 'Moliyaviy']).map((r) => (
+                <option key={r}>{r}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Qachon qaytadi" hint="Shu kuni ish stolida eslatma chiqadi">
+            <input type="date" name="freezeUntil" min={todayStr()} className="field" required />
+          </Field>
+          <p className="rounded-field bg-info-soft px-3 py-2.5 text-[13px] text-info">Muzlatish davrida to&apos;lov hisoblanmaydi.</p>
         </>
       )}
       {status === 'faol' && (current === 'ketgan' || current === 'muzlatilgan' || current === 'bitirgan') && (

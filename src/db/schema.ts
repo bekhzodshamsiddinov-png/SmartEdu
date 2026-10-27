@@ -52,6 +52,12 @@ export const settings = pgTable('settings', {
   telegram: text('telegram'),
   instagram: text('instagram'),
   academyTagline: text('academy_tagline'),
+  /** Yangi guruhlar uchun hisob turi: 'oylik' (har oy boshida) yoki 'dars' (har bir dars uchun) */
+  billingDefault: text('billing_default').notNull().default('oylik'),
+  /** Dars bo'yicha hisobda sababsiz kelmagan dars ham yechiladimi */
+  chargeAbsent: boolean('charge_absent').notNull().default(true),
+  /** Oylik hisobda o'quvchi oy o'rtasida qo'shilsa, qolgan darslarga mos qisman yechish */
+  prorateFirstMonth: boolean('prorate_first_month').notNull().default(false),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
 
@@ -73,6 +79,8 @@ export const users = pgTable('users', {
   branchId: integer('branch_id').references(() => branches.id, { onDelete: 'set null' }),
   position: text('position'),
   baseSalary: integer('base_salary').notNull().default(0),
+  /** O'qituvchi ulushi: o'z guruhlari o'quvchilari to'lagan summadan foiz */
+  teacherPercent: integer('teacher_percent').notNull().default(0),
   bonusRule: text('bonus_rule'),
   active: boolean('active').notNull().default(true),
   sessionVersion: integer('session_version').notNull().default(0),
@@ -111,6 +119,8 @@ export const groups = pgTable('groups', {
   endTime: text('end_time').notNull().default('16:00'),
   room: text('room'),
   capacity: integer('capacity').notNull().default(14),
+  /** 'oylik' — har oy uchun to'liq narx; 'dars' — har bir dars uchun (oylik narx / oydagi darslar soni) */
+  billing: text('billing').notNull().default('oylik'),
   startDate: date('start_date'),
   active: boolean('active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -133,6 +143,8 @@ export const students = pgTable(
     joinedAt: date('joined_at').notNull(),
     leftAt: date('left_at'),
     leftReason: text('left_reason'),
+    /** Muzlatilgan bo'lsa — qaytishi kutilgan sana */
+    freezeUntil: date('freeze_until'),
     returnAttempt: text('return_attempt'),
     returnResult: text('return_result'),
     graduatedAt: date('graduated_at'),
@@ -193,6 +205,7 @@ export const attendance = pgTable(
     date: date('date').notNull(),
     status: attendanceStatusEnum('status').notNull(),
     reason: text('reason'),
+    reasonId: integer('reason_id'),
     called: boolean('called').notNull().default(false),
     markedById: integer('marked_by_id').references(() => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -219,6 +232,11 @@ export const payments = pgTable(
     paidAt: date('paid_at').notNull(),
     note: text('note'),
     receivedById: integer('received_by_id').references(() => users.id),
+    cashboxId: integer('cashbox_id'),
+    /** Bekor qilingan to'lov o'chirilmaydi — belgi bilan saqlanadi */
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledById: integer('cancelled_by_id').references(() => users.id),
+    cancelReason: text('cancel_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('pay_student_idx').on(t.studentId), index('pay_date_idx').on(t.paidAt)],
@@ -238,6 +256,7 @@ export const transactions = pgTable(
     document: text('document'),
     note: text('note'),
     createdById: integer('created_by_id').references(() => users.id),
+    cashboxId: integer('cashbox_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('tx_date_idx').on(t.date)],
@@ -560,4 +579,116 @@ export const auditLog = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('audit_log_created_idx').on(t.createdAt)],
+);
+
+/* ================= Moliya: hisob daftari, kassalar, oylik ================= */
+
+/** Sabablar ma'lumotnomasi: davomat, ketish, muzlatish, lid rad etilishi */
+export const reasons = pgTable('reasons', {
+  id: serial('id').primaryKey(),
+  kind: text('kind').notNull(),
+  title: text('title').notNull(),
+  /** Faqat davomat uchun: shu sabab bilan kelmagan dars uchun pul yechiladimi */
+  charges: boolean('charges').notNull().default(false),
+  active: boolean('active').notNull().default(true),
+  position: integer('position').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** O'quvchi hisob daftari: har bir yechim (oylik, dars, tuzatish). Balans = to'lovlar − yechimlar */
+export const charges = pgTable(
+  'charges',
+  {
+    id: serial('id').primaryKey(),
+    studentId: integer('student_id')
+      .notNull()
+      .references(() => students.id, { onDelete: 'cascade' }),
+    enrollmentId: integer('enrollment_id').references(() => enrollments.id, { onDelete: 'set null' }),
+    groupId: integer('group_id').references(() => groups.id, { onDelete: 'set null' }),
+    /** 'oylik' | 'dars' | 'tuzatish' */
+    kind: text('kind').notNull(),
+    amount: integer('amount').notNull(),
+    date: date('date').notNull(),
+    month: text('month'),
+    attendanceId: integer('attendance_id'),
+    note: text('note'),
+    createdById: integer('created_by_id').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('charges_student_idx').on(t.studentId),
+    index('charges_date_idx').on(t.date),
+    uniqueIndex('charges_att_uq').on(t.attendanceId).where(sql`attendance_id is not null`),
+    uniqueIndex('charges_month_uq').on(t.enrollmentId, t.month).where(sql`kind = 'oylik'`),
+  ],
+);
+
+/** Kassalar: asosiy kassa va xodimlarning shaxsiy kassalari */
+export const cashboxes = pgTable('cashboxes', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  branchId: integer('branch_id').references(() => branches.id, { onDelete: 'set null' }),
+  ownerId: integer('owner_id').references(() => users.id, { onDelete: 'set null' }),
+  isMain: boolean('is_main').notNull().default(false),
+  active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Kassadan kassaga pul o'tkazish (qabul qiluvchi tasdiqlaydi) */
+export const cashTransfers = pgTable('cash_transfers', {
+  id: serial('id').primaryKey(),
+  fromId: integer('from_id')
+    .notNull()
+    .references(() => cashboxes.id),
+  toId: integer('to_id')
+    .notNull()
+    .references(() => cashboxes.id),
+  method: text('method').notNull().default('naqd'),
+  amount: integer('amount').notNull(),
+  /** 'kutilmoqda' | 'tasdiqlandi' | 'rad_etildi' */
+  status: text('status').notNull().default('kutilmoqda'),
+  note: text('note'),
+  createdById: integer('created_by_id').references(() => users.id),
+  confirmedById: integer('confirmed_by_id').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+});
+
+/** Xodim bo'yicha bonus, jarima va avanslar (oy kesimida) */
+export const staffAdjustments = pgTable(
+  'staff_adjustments',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    month: text('month').notNull(),
+    /** 'bonus' | 'jarima' | 'avans' */
+    kind: text('kind').notNull(),
+    amount: integer('amount').notNull(),
+    note: text('note'),
+    transactionId: integer('transaction_id'),
+    createdById: integer('created_by_id').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('adj_user_month_idx').on(t.userId, t.month)],
+);
+
+/** Berilgan oyliklar tarixi */
+export const salaryPayouts = pgTable(
+  'salary_payouts',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    month: text('month').notNull(),
+    amount: integer('amount').notNull(),
+    /** Hisob tafsiloti: oklad, ulush, bonus, jarima, avans */
+    breakdown: text('breakdown'),
+    transactionId: integer('transaction_id'),
+    paidById: integer('paid_by_id').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('payout_user_month_uq').on(t.userId, t.month)],
 );

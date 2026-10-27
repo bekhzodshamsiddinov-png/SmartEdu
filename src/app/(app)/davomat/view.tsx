@@ -21,6 +21,8 @@ const OPTS: { k: St; l: string; on: string }[] = [
 type GroupItem = { id: number; name: string; course: string; color: string; start: string; end: string; teacher: string | null; today: boolean };
 
 export function AttendanceView({
+  reasonOpts,
+  billing,
   groups,
   markedIds,
   group,
@@ -39,7 +41,9 @@ export function AttendanceView({
   date: string;
   todayStr: string;
   members: { id: number; name: string; status: string }[];
-  marks: { studentId: number; status: string; reason: string | null }[];
+  marks: { studentId: number; status: string; reason: string | null; reasonId: number | null }[];
+  reasonOpts: { id: number; title: string; charges: boolean }[];
+  billing: string;
   lesson: { topic: string | null; teacherStatus: string } | null;
   absents: { id: number; date: string; reason: string | null; called: boolean; studentId: number; name: string; phone: string | null; parentPhone: string | null; group: string }[];
   canSetTeacher: boolean;
@@ -49,8 +53,8 @@ export function AttendanceView({
   const path = usePathname();
   const toast = useToast();
   const [pending, start] = useTransition();
-  const initial = useMemo(() => Object.fromEntries(marks.map((m) => [m.studentId, { status: m.status as St, reason: m.reason ?? '' }])), [marks]);
-  const [state, setState] = useState<Record<number, { status: St; reason: string }>>(initial);
+  const initial = useMemo(() => Object.fromEntries(marks.map((m) => [m.studentId, { status: m.status as St, reason: m.reason ?? '', reasonId: m.reasonId ?? null }])), [marks]);
+  const [state, setState] = useState<Record<number, { status: St; reason: string; reasonId: number | null }>>(initial);
   const [topic, setTopic] = useState(lesson?.topic ?? '');
   const [teacherStatus, setTeacherStatus] = useState(lesson?.teacherStatus ?? 'vaqtida');
   const [teacherTouched, setTeacherTouched] = useState(false);
@@ -80,7 +84,7 @@ export function AttendanceView({
     const missing = members.filter((m) => !state[m.id]);
     if (missing.length) return toast(`${missing.length} ta o'quvchi belgilanmagan`, 'err');
     start(async () => {
-      const r = await saveAttendance({ groupId: group.id, date, marks: members.map((m) => ({ studentId: m.id, status: state[m.id].status, reason: state[m.id].reason || null })), topic, teacherStatus: canSetTeacher && teacherTouched ? teacherStatus : undefined });
+      const r = await saveAttendance({ groupId: group.id, date, marks: members.map((m) => ({ studentId: m.id, status: state[m.id].status, reason: state[m.id].reason || null, reasonId: state[m.id].status === 'sababli' ? state[m.id].reasonId : null })), topic, teacherStatus: canSetTeacher && teacherTouched ? teacherStatus : undefined });
       if (r.ok) {
         toast(absentCount ? `Davomat saqlandi. ${absentCount} ta kelmaganga qo'ng'iroq qiling.` : 'Davomat saqlandi');
         router.refresh();
@@ -188,7 +192,7 @@ export function AttendanceView({
                 </div>
                 <div className="flex items-center gap-2">
                   {isMarked && <Badge tone="good">Saqlangan</Badge>}
-                  <Button size="sm" variant="soft" onClick={() => setState(Object.fromEntries(members.map((m) => [m.id, { status: 'keldi' as St, reason: '' }])))}>
+                  <Button size="sm" variant="soft" onClick={() => setState(Object.fromEntries(members.map((m) => [m.id, { status: 'keldi' as St, reason: '', reasonId: null }])))}>
                     <CheckCheck className="h-4 w-4" /> Hammasi keldi
                   </Button>
                 </div>
@@ -211,7 +215,7 @@ export function AttendanceView({
                             {OPTS.map((o) => (
                               <button
                                 key={o.k}
-                                onClick={() => setState((x) => ({ ...x, [m.id]: { status: o.k, reason: x[m.id]?.reason ?? '' } }))}
+                                onClick={() => setState((x) => ({ ...x, [m.id]: { status: o.k, reason: x[m.id]?.reason ?? '', reasonId: x[m.id]?.reasonId ?? null } }))}
                                 className={cn('h-10 rounded-field border px-3 text-[13px] font-bold transition-colors sm:h-9', s?.status === o.k ? o.on : 'border-line-strong bg-white text-fg-muted hover:text-fg')}
                                 aria-pressed={s?.status === o.k}
                               >
@@ -220,6 +224,21 @@ export function AttendanceView({
                             ))}
                           </div>
                         </div>
+                        {s?.status === 'sababli' && reasonOpts.length > 0 && (
+                          <div className="mt-2.5 flex flex-wrap gap-1.5 sm:ml-8">
+                            {reasonOpts.map((r) => (
+                              <button
+                                key={r.id}
+                                type="button"
+                                onClick={() => setState((x) => ({ ...x, [m.id]: { ...x[m.id], reasonId: x[m.id].reasonId === r.id ? null : r.id, reason: x[m.id].reasonId === r.id ? '' : r.title } }))}
+                                className={cn('h-8 rounded-full border px-3 text-[13px] font-semibold', s.reasonId === r.id ? 'border-ink bg-ink text-white' : 'border-line-strong text-fg-muted')}
+                              >
+                                {r.title}
+                                {billing === 'dars' && r.charges && <span className="ml-1 opacity-70">· pulli</span>}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                         {(s?.status === 'kelmadi' || s?.status === 'sababli') && (
                           <input
                             value={s.reason}

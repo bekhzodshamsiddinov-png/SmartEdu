@@ -13,6 +13,8 @@ import { saveLead } from '@/app/actions/leads';
 import { submitReport, setTaskStatus } from '@/app/actions/tasks';
 import { money, phone } from '@/lib/format';
 import { fmtDate, fmtShort, WEEKDAYS_FULL, weekday } from '@/lib/dates';
+import { TransferForm, METHOD_LABEL, type Box } from '@/app/(app)/moliya/cashboxes';
+import { decideTransfer } from '@/app/actions/cashbox';
 
 type Item = { key: string; label: string; done: number; total: number; href?: string; hint?: string };
 type Lesson = { id: number; name: string; course: string; color: string; teacher: string | null; room: string | null; start_time: string; end_time: string; students: number; arrival: string | null; marked: number };
@@ -31,6 +33,9 @@ export function DeskView({
   parentGroups,
   pays,
   tasks,
+  unfreeze,
+  myBox,
+  me,
   reportDone,
   dueDay,
 }: {
@@ -44,6 +49,9 @@ export function DeskView({
   parentGroups: PG[];
   pays: { count: number; sum: number; cash: number };
   tasks: { id: number; title: string; dueDate: string | null; priority: string; status: string }[];
+  unfreeze: { id: number; name: string; phone: string | null; until: string; reason: string | null }[];
+  myBox: { box: Box; targets: Box[]; pending: { id: number; amount: number; method: string; from: string }[] } | null;
+  me: { id: number; role: string };
   reportDone: boolean;
   dueDay: number;
 }) {
@@ -252,6 +260,32 @@ export function DeskView({
               <input name="note" className="field" placeholder="Nimaga qiziqdi" aria-label="Izoh" />
             </ActionForm>
           </Card>
+
+          {myBox && <MyCashbox data={myBox} me={me} />}
+
+          {unfreeze.length > 0 && (
+            <Card className="overflow-hidden">
+              <SectionHead title="Muzlatishdan qaytish vaqti" right={<Badge tone="info">{unfreeze.length}</Badge>} />
+              <ul className="divide-y divide-line border-t border-line">
+                {unfreeze.map((u) => (
+                  <li key={u.id} className="flex items-center gap-3 px-5 py-3">
+                    <div className="min-w-0 flex-1">
+                      <Link href={`/oquvchilar?id=${u.id}`} className="text-sm font-semibold hover:text-brand">{u.name}</Link>
+                      <div className="text-xs text-fg-muted">
+                        {u.until < date ? 'Muddati o\'tdi' : 'Qaytadi'}: {fmtShort(u.until)}
+                        {u.reason && `, ${u.reason}`}
+                      </div>
+                    </div>
+                    {u.phone && (
+                      <a href={`tel:+${u.phone}`} className="rounded-lg p-2 text-brand hover:bg-brand-soft" aria-label="Qo'ng'iroq">
+                        <Phone className="h-4 w-4" />
+                      </a>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
 
           {/* Vazifalar */}
           <Card className="overflow-hidden">
@@ -498,5 +532,45 @@ function Ring({ value }: { value: number }) {
       </svg>
       <span className="absolute inset-0 grid place-items-center text-[17px] font-extrabold tnum">{v}%</span>
     </div>
+  );
+}
+
+function MyCashbox({ data, me }: { data: { box: Box; targets: Box[]; pending: { id: number; amount: number; method: string; from: string }[] }; me: { id: number; role: string } }) {
+  const [open, setOpen] = useState(false);
+  const b = data.box;
+  return (
+    <Card className="overflow-hidden">
+      <SectionHead title={b.name} right={<span className="text-[15px] font-extrabold tnum">{money(b.total)}</span>} />
+      <div className="border-t border-line px-5 py-3">
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-fg-muted tnum">
+          {Object.entries(b.byMethod)
+            .filter(([, v]) => v !== 0)
+            .map(([k, v]) => (
+              <span key={k}>
+                {METHOD_LABEL[k] ?? k}: {money(v)}
+              </span>
+            ))}
+          {Object.keys(b.byMethod).length === 0 && <span>Kassa bo&apos;sh</span>}
+        </div>
+        {data.pending.map((t) => (
+          <div key={t.id} className="mt-2.5 flex items-center gap-2 rounded-lg bg-warn-soft px-3 py-2 text-[13px]">
+            <span className="min-w-0 flex-1">
+              {t.from}dan {money(t.amount)} ({METHOD_LABEL[t.method] ?? t.method})
+            </span>
+            <ActionButton variant="primary" action={() => decideTransfer(t.id, true)}>
+              <Check className="h-4 w-4" /> Qabul qildim
+            </ActionButton>
+          </div>
+        ))}
+        {b.total > 0 && (
+          <Button size="sm" variant="soft" className="mt-3 w-full" onClick={() => setOpen(true)}>
+            <Send className="h-4 w-4" /> Asosiy kassaga topshirish
+          </Button>
+        )}
+      </div>
+      <Modal open={open} onClose={() => setOpen(false)} title="Pulni topshirish" sub="Summa kassangizdan darhol ayriladi, qabul qiluvchi tasdiqlaydi" size="sm">
+        {open && <TransferForm boxes={data.targets} me={me} fromId={b.id} onDone={() => setOpen(false)} />}
+      </Modal>
+    </Card>
   );
 }

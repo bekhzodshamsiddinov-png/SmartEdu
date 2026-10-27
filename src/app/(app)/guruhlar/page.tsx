@@ -3,6 +3,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import { db } from '@/db';
 import { groups, courses, users, enrollments, students, lessons } from '@/db/schema';
 import { requireSection } from '@/lib/auth';
+import { getSettings } from '@/lib/settings';
 import { seesMoney } from '@/lib/roles';
 import { getBalances } from '@/lib/finance';
 import { groupOptions, staffOptions } from '@/lib/options';
@@ -38,6 +39,7 @@ export default async function GroupsPage({ searchParams }: { searchParams: Promi
         startDate: groups.startDate,
         active: groups.active,
         branchId: groups.branchId,
+        billing: groups.billing,
       })
       .from(groups)
       .innerJoin(courses, eq(courses.id, groups.courseId))
@@ -88,6 +90,7 @@ export default async function GroupsPage({ searchParams }: { searchParams: Promi
 
   return (
     <GroupsView
+      billingDefault={(await getSettings()).billingDefault}
       groups={list}
       courses={cs.map((c) => ({ id: c.id, name: c.name, price: c.monthly_price, duration: c.duration_months, color: c.color, description: c.description, active: c.active, groups: c.groups, students: c.students }))}
       teachers={teachers}

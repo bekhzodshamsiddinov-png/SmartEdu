@@ -1,6 +1,8 @@
 'use server';
-import { eq, and, isNull } from 'drizzle-orm';
+import { ensureMonthlyCharges, syncLessonCharges } from '@/lib/billing';
+import { eq, and, isNull, sql } from 'drizzle-orm';
 import { db } from '@/db';
+import { charges } from '@/db/schema';
 import { groups, courses, enrollments, students } from '@/db/schema';
 import { assertSection } from '@/lib/auth';
 import { run, str, req, int, bool } from '@/lib/action';
@@ -34,14 +36,18 @@ export async function saveGroup(id: number | null, fd: FormData) {
       endTime: req(fd, 'endTime', 'Tugash vaqti'),
       room: str(fd, 'room'),
       capacity: int(fd, 'capacity') ?? 14,
+      // Hisob turi: 'oylik' yoki 'dars'
+      ...(fd.has('billing') ? { billing: str(fd, 'billing') === 'dars' ? 'dars' : 'oylik' } : {}),
       startDate: str(fd, 'startDate'),
       branchId: fd.has('branchId') || !id ? await resolveBranch(int(fd, 'branchId')) : undefined,
     };
     const branchOf = v.branchId ?? (id ? (await db.select({ b: groups.branchId }).from(groups).where(eq(groups.id, id)))[0]?.b : null);
     await assertStaffFor(v.teacherId, ['oqituvchi', 'rahbar', 'admin'], branchOf);
     await assertStaffFor(v.supportId, ['support', 'oqituvchi', 'admin', 'rahbar'], branchOf);
+    const prevBilling = id ? (await db.select({ b: groups.billing }).from(groups).where(eq(groups.id, id)))[0]?.b : null;
     if (id) await db.update(groups).set(v).where(eq(groups.id, id));
     else await db.insert(groups).values(v);
+    if (id && v.billing && prevBilling && v.billing !== prevBilling) await switchBilling(id, v.billing);
     return { message: id ? 'Guruh yangilandi' : 'Guruh ochildi' };
   });
 }
@@ -96,9 +102,35 @@ export async function moveStudent(enrollmentId: number, fd: FormData) {
     if (!e) throw new Error('Yozuv topilmadi.');
     const d = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date());
     await db.update(enrollments).set({ active: false, endDate: d }).where(eq(enrollments.id, enrollmentId));
-    await db.insert(enrollments).values({ studentId: e.studentId, groupId, monthlyFee: e.monthlyFee, startDate: d });
+    const [ne] = await db.insert(enrollments).values({ studentId: e.studentId, groupId, monthlyFee: e.monthlyFee, startDate: d }).returning({ id: enrollments.id });
+    // Shu oy avvalgi guruhda allaqachon hisoblangan bo'lsa, yangi guruhda ikkinchi marta yechilmaydi
+    const [already] = await db.execute<{ c: number }>(sql`select count(*)::int c from charges where enrollment_id = ${enrollmentId} and kind = 'oylik' and month = ${d.slice(0, 7)}`);
+    if (already.c) {
+      await db
+        .insert(charges)
+        .values({ studentId: e.studentId, enrollmentId: ne.id, groupId, kind: 'oylik', amount: 0, date: d, month: d.slice(0, 7), note: "Ko'chirildi: bu oy avvalgi guruhda hisoblangan", createdById: u.id })
+        .onConflictDoNothing();
+    }
+    await ensureMonthlyCharges(true);
     const [g] = await db.select({ b: groups.branchId }).from(groups).where(eq(groups.id, groupId));
     if (g?.b) await db.update(students).set({ branchId: g.b }).where(eq(students.id, e.studentId));
     return { message: "Boshqa guruhga o'tkazildi" };
   });
+}
+
+/**
+ * Hisob turi o'zgarganda joriy oy yangi qoida bo'yicha qayta hisoblanadi (o'tgan oylar o'zgarmaydi).
+ * oylik → dars: shu oydagi oylik yechim olib tashlanadi, shu oyda o'tilgan darslar bo'yicha yechiladi.
+ * dars → oylik: shu oydagi dars yechimlari olib tashlanadi, oylik to'lov hisoblanadi.
+ */
+async function switchBilling(groupId: number, billing: string) {
+  const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date()).slice(0, 7);
+  if (billing === 'dars') {
+    await db.execute(sql`delete from charges where group_id = ${groupId} and kind = 'oylik' and month = ${month}`);
+    const dates = await db.execute<{ d: string }>(sql`select distinct date::text d from attendance where group_id = ${groupId} and to_char(date, 'YYYY-MM') = ${month}`);
+    for (const r of dates) await syncLessonCharges(groupId, r.d);
+  } else {
+    await db.execute(sql`delete from charges where group_id = ${groupId} and kind = 'dars' and month = ${month}`);
+    await ensureMonthlyCharges(true);
+  }
 }

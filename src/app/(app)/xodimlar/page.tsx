@@ -15,7 +15,7 @@ export default async function StaffPage() {
   const to = monthEnd(m);
   const t = today();
   const [list, teach, admin, sales, tasks, reports] = await Promise.all([
-    db.select({ id: users.id, branchId: users.branchId, fullName: users.fullName, phone: users.phone, role: users.role, position: users.position, baseSalary: users.baseSalary, bonusRule: users.bonusRule, active: users.active, hiredAt: users.hiredAt, twoFactor: users.totpEnabled }).from(users).orderBy(asc(users.active), asc(users.fullName)),
+    db.select({ id: users.id, branchId: users.branchId, fullName: users.fullName, phone: users.phone, role: users.role, position: users.position, baseSalary: users.baseSalary, teacherPercent: users.teacherPercent, bonusRule: users.bonusRule, active: users.active, hiredAt: users.hiredAt, twoFactor: users.totpEnabled }).from(users).orderBy(asc(users.active), asc(users.fullName)),
     db.execute<{ uid: number; groups: number; students: number; lessons: number; late: number; missed: number; att_total: number; att_present: number }>(sql`
       select u.id uid,
         (select count(*) from groups g where g.active and (g.teacher_id = u.id or g.support_id = u.id))::int groups,
@@ -28,7 +28,7 @@ export default async function StaffPage() {
       from users u where u.role in ('oqituvchi','support')`),
     db.execute<{ uid: number; received: string; calls: number; parent: number }>(sql`
       select u.id uid,
-        (select coalesce(sum(amount),0) from payments p where p.received_by_id = u.id and p.paid_at between ${from} and ${to}) received,
+        (select coalesce(sum(amount),0) from payments p where p.cancelled_at is null and p.received_by_id = u.id and p.paid_at between ${from} and ${to}) received,
         (select count(*) from notes n where n.author_id = u.id and n.kind = 'qongiroq' and n.created_at::date between ${from} and ${to})::int calls,
         (select count(*) from notes n where n.author_id = u.id and n.kind = 'ota_ona' and n.created_at::date between ${from} and ${to})::int parent
       from users u where u.role in ('admin','rahbar','bugalter')`),

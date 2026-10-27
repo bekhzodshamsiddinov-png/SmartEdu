@@ -18,7 +18,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const month = /^\d{4}-\d{2}$/.test(sp.oy ?? '') ? sp.oy : thisMonth();
   const [list, all, balances, s, lastPay, enr] = await Promise.all([
     db
-      .select({ id: payments.id, amount: payments.amount, method: payments.method, paidAt: payments.paidAt, forMonth: payments.forMonth, note: payments.note, studentId: students.id, student: students.fullName, by: users.fullName })
+      .select({ id: payments.id, amount: payments.amount, method: payments.method, paidAt: payments.paidAt, forMonth: payments.forMonth, note: payments.note, studentId: students.id, student: students.fullName, by: users.fullName, cancelledAt: payments.cancelledAt, cancelReason: payments.cancelReason })
       .from(payments)
       .innerJoin(students, eq(students.id, payments.studentId))
       .leftJoin(users, eq(users.id, payments.receivedById))
@@ -27,7 +27,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
     db.select({ id: students.id, name: students.fullName, phone: students.phone, parentPhone: students.parentPhone, parentName: students.parentName, status: students.status }).from(students).where(sql`${students.status} in ('faol','xavf','muzlatilgan') ${B ? sql`and ${students.branchId} = ${B}` : sql``}`).orderBy(students.fullName),
     getBalances(),
     getSettings(),
-    db.execute<{ student_id: number; d: string }>(sql`select student_id, max(paid_at)::text d from payments group by 1`),
+    db.execute<{ student_id: number; d: string }>(sql`select student_id, max(paid_at)::text d from payments where cancelled_at is null group by 1`),
     db.execute<{ id: number; student_id: number; label: string }>(sql`select e.id, e.student_id, g.name || ' (' || c.name || ')' label from enrollments e join groups g on g.id = e.group_id join courses c on c.id = g.course_id where e.active and e.end_date is null`),
   ]);
   const lp = new Map(lastPay.map((r) => [r.student_id, r.d]));
@@ -48,7 +48,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   return (
     <PaymentsView
       month={month}
-      list={list}
+      list={list.map(({ cancelledAt, ...x }) => ({ ...x, cancelled: !!cancelledAt }))}
       students={opts}
       debtors={debtors}
       dueDay={s.paymentDueDay}

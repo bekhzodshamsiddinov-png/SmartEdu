@@ -2,6 +2,7 @@ import 'server-only';
 import { sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { today as todayFn, monthsBetween } from './dates';
+import { ensureMonthlyCharges } from './billing';
 
 export function monthsCharged(start: string, end: string | null, ref: string) {
   if (start > ref) return 0;
@@ -12,26 +13,26 @@ export function monthsCharged(start: string, end: string | null, ref: string) {
 
 export type Balance = { charged: number; paid: number; balance: number; monthlyFee: number; overdueMonths: number };
 
-/** Har bir o'quvchining hisob-kitobi: hisoblangan summa, to'langan summa, balans */
+/**
+ * Har bir o'quvchining hisobi hisob daftaridan: yechimlar (charges) va bekor qilinmagan to'lovlar.
+ * Balans musbat — oldindan to'langan ("haqdor"), manfiy — qarz.
+ */
 export async function getBalances(ref = todayFn()): Promise<Map<number, Balance>> {
-  const enr = await db.execute<{ student_id: number; monthly_fee: number; start_date: string; end_date: string | null; active: boolean }>(
-    sql`select student_id, monthly_fee, start_date::text, end_date::text, active from enrollments`,
-  );
-  const pays = await db.execute<{ student_id: number; paid: string }>(
-    sql`select student_id, sum(amount)::bigint as paid from payments group by student_id`,
-  );
+  await ensureMonthlyCharges();
+  const [ch, pays, fees] = await Promise.all([
+    db.execute<{ student_id: number; s: string }>(sql`select student_id, sum(amount)::bigint s from charges where date <= ${ref} group by 1`),
+    db.execute<{ student_id: number; s: string }>(sql`select student_id, sum(amount)::bigint s from payments where cancelled_at is null and paid_at <= ${ref} group by 1`),
+    db.execute<{ student_id: number; s: string }>(sql`select student_id, sum(monthly_fee)::bigint s from enrollments where active and end_date is null group by 1`),
+  ]);
   const map = new Map<number, Balance>();
-  for (const e of enr) {
-    const b = map.get(e.student_id) ?? { charged: 0, paid: 0, balance: 0, monthlyFee: 0, overdueMonths: 0 };
-    b.charged += e.monthly_fee * monthsCharged(e.start_date, e.end_date, ref);
-    if (e.active && !e.end_date) b.monthlyFee += e.monthly_fee;
-    map.set(e.student_id, b);
-  }
-  for (const p of pays) {
-    const b = map.get(p.student_id) ?? { charged: 0, paid: 0, balance: 0, monthlyFee: 0, overdueMonths: 0 };
-    b.paid = Number(p.paid);
-    map.set(p.student_id, b);
-  }
+  const get = (id: number) => {
+    let b = map.get(id);
+    if (!b) map.set(id, (b = { charged: 0, paid: 0, balance: 0, monthlyFee: 0, overdueMonths: 0 }));
+    return b;
+  };
+  for (const r of ch) get(r.student_id).charged = Number(r.s);
+  for (const r of pays) get(r.student_id).paid = Number(r.s);
+  for (const r of fees) get(r.student_id).monthlyFee = Number(r.s);
   for (const b of map.values()) {
     b.balance = b.paid - b.charged;
     b.overdueMonths = b.balance < 0 && b.monthlyFee > 0 ? Math.ceil(-b.balance / b.monthlyFee) : b.balance < 0 ? 1 : 0;
@@ -49,7 +50,7 @@ export async function absentStreakIds(): Promise<Set<number>> {
 }
 
 export const EXPENSE_CATEGORIES = ['Oylik', 'Ijara', 'Kommunal va internet', 'Marketing', 'Jihozlar', 'Soliqlar', 'Boshqa'] as const;
-export const INCOME_CATEGORIES = ['Boshqa daromad', 'Grant', 'Xizmat (zakaz)', 'Investitsiya'] as const;
+export const INCOME_CATEGORIES = ['Boshqa daromad', 'Grant', 'Xizmat (zakaz)', 'Investitsiya', "Boshlang'ich qoldiq"] as const;
 
 export const RECON_ROWS = [
   { key: 'kirim', label: 'Kirim' },

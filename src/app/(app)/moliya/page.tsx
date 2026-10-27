@@ -8,6 +8,8 @@ import { monthEnd, monthStart, thisMonth } from '@/lib/dates';
 import { expensesByCategory, incomeExpense, monthlySeries, revenueByCourse } from '@/lib/stats';
 import { FinanceView } from './view';
 import { allBranches, getBranchScope } from '@/lib/branch';
+import { cashboxBalances } from '@/lib/cashbox';
+import { payroll } from '@/lib/payroll';
 
 export const metadata = { title: 'Moliya' };
 
@@ -20,9 +22,21 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
   const month = /^\d{4}-\d{2}$/.test(sp.oy ?? '') ? sp.oy : thisMonth();
   const from = monthStart(month);
   const to = monthEnd(month);
+  const tab = (['jurnal', 'solishtirma', 'tahlil', 'kassalar', 'oylik'].includes(sp.tab) ? sp.tab : 'jurnal') as 'jurnal' | 'solishtirma' | 'tahlil' | 'kassalar' | 'oylik';
+  const boxes = (await cashboxBalances()).filter((b) => !user.branchId || !b.branchId || b.branchId === user.branchId);
+  const [transfers, staffList, pay] = await Promise.all([
+    tab === 'kassalar'
+      ? db.execute<{ id: number; from_id: number; to_id: number; from: string; to: string; method: string; amount: number; status: string; note: string | null; by: string | null; created_by_id: number | null; at: string }>(sql`
+          select t.id, t.from_id, t.to_id, f.name "from", c.name "to", t.method, t.amount, t.status, t.note, u.full_name by, t.created_by_id, (t.created_at at time zone 'Asia/Tashkent')::date::text at
+          from cash_transfers t join cashboxes f on f.id = t.from_id join cashboxes c on c.id = t.to_id left join users u on u.id = t.created_by_id
+          order by (t.status = 'kutilmoqda') desc, t.id desc limit 50`)
+      : Promise.resolve([]),
+    tab === 'kassalar' ? db.select({ id: users.id, name: users.fullName }).from(users).where(eq(users.active, true)).orderBy(users.fullName) : Promise.resolve([]),
+    tab === 'oylik' ? payroll(month, B) : Promise.resolve([]),
+  ]);
   const [tx, ie, rec, byCourse, byCat, series, s, payMethods] = await Promise.all([
     db
-      .select({ id: transactions.id, branchId: transactions.branchId, type: transactions.type, category: transactions.category, amount: transactions.amount, date: transactions.date, method: transactions.method, counterparty: transactions.counterparty, document: transactions.document, note: transactions.note, by: users.fullName })
+      .select({ id: transactions.id, branchId: transactions.branchId, cashboxId: transactions.cashboxId, type: transactions.type, category: transactions.category, amount: transactions.amount, date: transactions.date, method: transactions.method, counterparty: transactions.counterparty, document: transactions.document, note: transactions.note, by: users.fullName })
       .from(transactions)
       .leftJoin(users, eq(users.id, transactions.createdById))
       .where(sql`${transactions.date} between ${from} and ${to} ${B ? sql`and ${transactions.branchId} = ${B}` : sql``}`)
@@ -33,7 +47,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
     expensesByCategory(from, to, B),
     monthlySeries(month, 6, B),
     getSettings(),
-    db.execute<{ method: string; s: string }>(sql`select p.method::text, sum(p.amount) s from payments p where p.paid_at between ${from} and ${to} ${B ? sql`and p.branch_id = ${B}` : sql``} group by 1`),
+    db.execute<{ method: string; s: string }>(sql`select p.method::text, sum(p.amount) s from payments p where p.cancelled_at is null and p.paid_at between ${from} and ${to} ${B ? sql`and p.branch_id = ${B}` : sql``} group by 1`),
   ]);
   // Filialga biriktirilgan xodim butun kompaniya raqamlarini ko'rmaydi
   const locked = !!user.branchId;
@@ -53,7 +67,13 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
       series={series}
       reservePercent={s.reservePercent}
       payMethods={Object.fromEntries(payMethods.map((p) => [p.method, Number(p.s)]))}
-      tab={(['jurnal', 'solishtirma', 'tahlil'].includes(sp.tab) ? sp.tab : 'jurnal') as 'jurnal' | 'solishtirma' | 'tahlil'}
+      tab={tab}
+      boxes={boxes}
+      transfers={[...transfers].map((t) => ({ id: t.id, fromId: t.from_id, toId: t.to_id, from: t.from, to: t.to, method: t.method, amount: t.amount, status: t.status, note: t.note, by: t.by, createdById: t.created_by_id, at: t.at }))}
+      staff={staffList}
+      payrollRows={pay}
+      salaryDay={s.salaryDay}
+      me={{ id: user.id, role: user.role }}
       openNew={sp.yangi === '1'}
       isBoss={user.role === 'rahbar'}
       branches={branches.map((b) => ({ id: b.id, name: b.name }))}

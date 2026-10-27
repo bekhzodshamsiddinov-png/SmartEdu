@@ -27,5 +27,9 @@ export default async function SettingsPage() {
   const auditRows = await db.execute<{ id: number; at: string; actorName: string | null; actorType: string; action: string; detail: string | null; ip: string | null }>(sql`
     select id, to_char(created_at at time zone 'Asia/Tashkent', 'DD.MM HH24:MI') at, actor_name "actorName", actor_type "actorType", action, detail, ip
     from audit_log order by id desc limit 80`);
-  return <SettingsView auditRows={[...auditRows]} integrations={integrations} academy={academy} branches={[...branches]} s={{ centerName: s.centerName, phone: s.phone, address: s.address, paymentDueDay: s.paymentDueDay, salaryDay: s.salaryDay, reservePercent: s.reservePercent }} counts={c} />;
+  const reasonRows = await db.execute<{ id: number; kind: string; title: string; charges: boolean; active: boolean; used: number }>(sql`
+    select r.id, r.kind, r.title, r.charges, r.active,
+      ((select count(*) from attendance a where a.reason_id = r.id))::int used
+    from reasons r order by r.kind, r.active desc, r.position, r.title`);
+  return <SettingsView reasonRows={[...reasonRows]} auditRows={[...auditRows]} integrations={integrations} academy={academy} branches={[...branches]} s={{ centerName: s.centerName, phone: s.phone, address: s.address, paymentDueDay: s.paymentDueDay, salaryDay: s.salaryDay, reservePercent: s.reservePercent, billingDefault: s.billingDefault, chargeAbsent: s.chargeAbsent, prorateFirstMonth: s.prorateFirstMonth }} counts={c} />;
 }

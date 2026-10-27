@@ -12,7 +12,7 @@ import { money, phone, pct } from '@/lib/format';
 import { fmtMonth, fmtShort } from '@/lib/dates';
 
 type S = {
-  id: number; branchId: number | null; fullName: string; phone: string; role: Role; position: string | null; baseSalary: number; bonusRule: string | null; active: boolean; hiredAt: string | null; twoFactor: boolean;
+  id: number; branchId: number | null; fullName: string; phone: string; role: Role; position: string | null; baseSalary: number; teacherPercent: number; bonusRule: string | null; active: boolean; hiredAt: string | null; twoFactor: boolean;
   teach: { groups: number; students: number; lessons: number; late: number; missed: number; att_total: number; att_present: number } | null;
   admin: { received: number; calls: number; parent: number } | null;
   sales: { leads: number; paid: number; calls: number } | null;
@@ -69,6 +69,7 @@ export function StaffView({ staff, meId, month, branches }: { staff: S[]; meId: 
                     {s.position && <span>{s.position}</span>}
                     {branches.length > 1 && <span>{s.role === 'rahbar' || !s.branchId ? 'Barcha filiallar' : branches.find((b) => b.id === s.branchId)?.name}</span>}
                     {s.baseSalary > 0 && <span>Oylik: {money(s.baseSalary)}</span>}
+                    {s.teacherPercent > 0 && <span>Ulush: {s.teacherPercent}%</span>}
                   </div>
                 </div>
                 <div className="flex shrink-0 gap-1">
@@ -164,8 +165,11 @@ function StaffForm({ s, branches, onDone }: { s: S | null; branches: { id: numbe
         <Field label="Ishga kirgan sana">
           <input type="date" name="hiredAt" defaultValue={s?.hiredAt ?? ''} className="field" />
         </Field>
-        <Field label="Qat'iy oylik">
+        <Field label="Qat'iy oylik (oklad)">
           <MoneyInput name="baseSalary" defaultValue={s?.baseSalary} />
+        </Field>
+        <Field label="Ulush, %" hint="Guruhlaridagi o'quvchilar to'lagan pulning necha foizi oylikka qo'shiladi">
+          <input type="number" name="teacherPercent" min={0} max={80} defaultValue={s?.teacherPercent ?? 0} className="field" />
         </Field>
         <Field label={s ? 'Yangi parol' : 'Parol'} hint={s ? "O'zgartirmasangiz bo'sh qoldiring" : 'Kamida 8 belgi, harf va raqam'}>
           <input name="password" type="text" autoComplete="new-password" className="field" required={!s} minLength={8} />

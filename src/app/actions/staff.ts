@@ -2,7 +2,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 import { db } from '@/db';
-import { users, settings, type Role } from '@/db/schema';
+import { users, settings, reasons, type Role } from '@/db/schema';
 import { assertSection, getCurrentUser } from '@/lib/auth';
 import { run, str, req, int } from '@/lib/action';
 import { normalizePhone } from '@/lib/format';
@@ -33,6 +33,7 @@ export async function saveStaff(id: number | null, fd: FormData) {
       role,
       position: str(fd, 'position'),
       baseSalary: int(fd, 'baseSalary') ?? 0,
+      teacherPercent: Math.min(80, Math.max(0, int(fd, 'teacherPercent') ?? 0)),
       bonusRule: str(fd, 'bonusRule'),
       hiredAt: str(fd, 'hiredAt'),
       branchId: role === 'rahbar' ? null : int(fd, 'branchId'),
@@ -127,6 +128,9 @@ export async function saveSettings(fd: FormData) {
       paymentDueDay: Math.min(28, Math.max(1, int(fd, 'paymentDueDay') ?? 5)),
       salaryDay: Math.min(28, Math.max(1, int(fd, 'salaryDay') ?? 10)),
       reservePercent: Math.min(50, Math.max(0, int(fd, 'reservePercent') ?? 10)),
+      billingDefault: str(fd, 'billingDefault') === 'dars' ? 'dars' : 'oylik',
+      chargeAbsent: fd.get('chargeAbsent') === 'on',
+      prorateFirstMonth: fd.get('prorateFirstMonth') === 'on',
       updatedAt: new Date(),
     };
     await db.insert(settings).values({ id: 1, ...v }).onConflictDoUpdate({ target: settings.id, set: v });
@@ -252,5 +256,33 @@ export async function reset2fa(id: number, fd: FormData) {
     await audit({ actorType: 'xodim', actorId: me.id, actorName: me.fullName, action: '2FA bekor qilindi', detail: u.fullName });
     await notifyTelegram(`⚠️ SmartEdu: ${u.fullName} ning ikki bosqichli kirishi bekor qilindi.\nKim: ${me.fullName}`);
     return { message: `${u.fullName}: ikki bosqichli kirish o'chirildi` };
+  });
+}
+
+/* ---------- Sabablar ma'lumotnomasi ---------- */
+
+const REASON_KINDS = ['davomat', 'ketdi', 'muzlatish', 'lid'] as const;
+
+export async function saveReason(id: number | null, fd: FormData) {
+  return run(async () => {
+    const me = await assertSection('settings');
+    const kind = str(fd, 'kind') as (typeof REASON_KINDS)[number];
+    if (!REASON_KINDS.includes(kind)) throw new Error("Sabab turi noto'g'ri.");
+    const title = req(fd, 'title', 'Sabab').slice(0, 80);
+    const v = { kind, title, charges: kind === 'davomat' && fd.get('charges') === 'on' };
+    if (id) await db.update(reasons).set(v).where(eq(reasons.id, id));
+    else await db.insert(reasons).values(v);
+    await audit({ actorType: 'xodim', actorId: me.id, actorName: me.fullName, action: id ? 'Sabab tahrirlandi' : "Sabab qo'shildi", detail: `${kind}: ${title}` });
+    return { message: id ? 'Sabab saqlandi' : "Sabab qo'shildi" };
+  });
+}
+
+export async function toggleReason(id: number) {
+  return run(async () => {
+    await assertSection('settings');
+    const [r] = await db.select().from(reasons).where(eq(reasons.id, id));
+    if (!r) throw new Error('Topilmadi.');
+    await db.update(reasons).set({ active: !r.active }).where(eq(reasons.id, id));
+    return { message: r.active ? "Sabab o'chirildi" : 'Sabab yoqildi' };
   });
 }

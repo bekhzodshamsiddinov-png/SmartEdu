@@ -10,6 +10,9 @@ import { assertBranch, resolveBranch } from '@/lib/branch';
 import { audit } from '@/lib/security';
 import { notifyTelegram } from '@/lib/payments';
 import { money } from '@/lib/format';
+import { cashboxes } from '@/db/schema';
+import { mainCashbox } from '@/lib/cashbox';
+import { and } from 'drizzle-orm';
 
 export async function saveTransaction(id: number | null, fd: FormData) {
   return run(async () => {
@@ -22,8 +25,12 @@ export async function saveTransaction(id: number | null, fd: FormData) {
     if (type !== 'kirim' && type !== 'chiqim') throw new Error("Turi noto'g'ri.");
     const date = str(fd, 'date') || today();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("Sana noto'g'ri.");
+    const boxId = int(fd, 'cashboxId');
+    const box = boxId ? (await db.select().from(cashboxes).where(and(eq(cashboxes.id, boxId), eq(cashboxes.active, true))))[0] : await mainCashbox();
+    if (!box) throw new Error('Kassa topilmadi.');
     const v = {
       type,
+      cashboxId: box.id,
       category: req(fd, 'category', 'Toifa'),
       amount,
       date,

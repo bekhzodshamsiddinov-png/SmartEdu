@@ -7,7 +7,8 @@ import { run, str, int } from '@/lib/action';
 import { today } from '@/lib/dates';
 import { assertBranch } from '@/lib/branch';
 import { students } from '@/db/schema';
-import { and } from 'drizzle-orm';
+import { and, isNull } from 'drizzle-orm';
+import { cashboxForUser } from '@/lib/cashbox';
 import { audit } from '@/lib/security';
 import { notifyTelegram } from '@/lib/payments';
 import { money } from '@/lib/format';
@@ -38,7 +39,10 @@ export async function addPayment(fd: FormData) {
       enrollmentId = e?.id ?? null;
     }
     const method = (str(fd, 'method') || 'naqd') as 'naqd' | 'click' | 'payme' | 'karta' | 'bank';
-    await db.insert(payments).values({
+    if (!['naqd', 'click', 'payme', 'karta', 'bank'].includes(method)) throw new Error("To'lov usuli noto'g'ri.");
+    // Pul qabul qilgan xodimning kassasiga (yoki asosiy kassaga) tushadi
+    const box = await cashboxForUser(u.id);
+    const [ins] = await db.insert(payments).values({
       studentId,
       enrollmentId,
       amount,
@@ -48,27 +52,37 @@ export async function addPayment(fd: FormData) {
       note: str(fd, 'note'),
       receivedById: u.id,
       branchId: st?.b ?? null,
-    });
+      cashboxId: box.id,
+    }).returning({ id: payments.id });
     const [sn] = await db.select({ n: students.fullName }).from(students).where(eq(students.id, studentId));
     await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: "To'lov qabul qilindi", detail: `${sn?.n}: ${money(amount)} (${method}, ${paidAt})` });
-    return { message: "To'lov qabul qilindi" };
+    return { id: ins.id, message: "To'lov qabul qilindi" };
   });
 }
 
-export async function deletePayment(id: number) {
+/** To'lovni bekor qilish: o'chirilmaydi, sababi bilan belgilanadi va hisobotlardan chiqadi */
+export async function cancelPayment(id: number, fd: FormData) {
   return run(async () => {
     const u = await assertSection('payments');
     if (u.role !== 'rahbar') throw new Error("To'lovni faqat rahbar bekor qila oladi.");
+    const reason = str(fd, 'reason');
+    if (!reason || reason.length < 3) throw new Error('Bekor qilish sababini yozing.');
     const [p] = await db
-      .select({ amount: payments.amount, paidAt: payments.paidAt, method: payments.method, name: students.fullName })
+      .select({ amount: payments.amount, paidAt: payments.paidAt, method: payments.method, name: students.fullName, cancelled: payments.cancelledAt })
       .from(payments)
       .leftJoin(students, eq(students.id, payments.studentId))
       .where(eq(payments.id, id));
     if (!p) throw new Error("To'lov topilmadi.");
-    await db.delete(payments).where(eq(payments.id, id));
-    const d = `${p.name}: ${money(p.amount)} (${p.method}, ${p.paidAt})`;
-    await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: "To'lov o'chirildi", detail: d });
-    await notifyTelegram(`🗑 SmartEdu: to'lov o'chirildi\n${d}\nKim: ${u.fullName}`);
+    if (p.cancelled) throw new Error("To'lov allaqachon bekor qilingan.");
+    const done = await db
+      .update(payments)
+      .set({ cancelledAt: new Date(), cancelledById: u.id, cancelReason: reason.slice(0, 200) })
+      .where(and(eq(payments.id, id), isNull(payments.cancelledAt)))
+      .returning({ id: payments.id });
+    if (!done.length) throw new Error("To'lov allaqachon bekor qilingan.");
+    const d = `${p.name}: ${money(p.amount)} (${p.method}, ${p.paidAt}). Sabab: ${reason}`;
+    await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: "To'lov bekor qilindi", detail: d });
+    await notifyTelegram(`🗑 SmartEdu: to'lov bekor qilindi\n${d}\nKim: ${u.fullName}`);
     return { message: "To'lov bekor qilindi" };
   });
 }

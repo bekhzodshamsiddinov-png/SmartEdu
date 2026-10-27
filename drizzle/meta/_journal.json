@@ -64,6 +64,13 @@
       "when": 1793029518870,
       "tag": "0008_payme_active",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793091090691,
+      "tag": "0009_money_ledger",
+      "breakpoints": true
     }
   ]
 }

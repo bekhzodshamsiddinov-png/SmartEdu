@@ -18,7 +18,7 @@ import { STUDENT_STATUS } from '@/lib/constants';
 type G = {
   id: number; name: string; courseId: number; course: string; color: string; teacherId: number | null; teacher: string | null;
   supportId: number | null; support: string | null; days: string; startTime: string; endTime: string; room: string | null;
-  capacity: number; startDate: string | null; active: boolean; students: number; branchId: number | null;
+  capacity: number; startDate: string | null; active: boolean; students: number; branchId: number | null; billing: string;
 };
 type C = { id: number; name: string; price: number; duration: number; color: string; description: string | null; active: boolean; groups: number; students: number };
 type Detail = {
@@ -30,7 +30,7 @@ type Detail = {
 const COLORS = ['#008A70', '#3D6FD1', '#C2862A', '#B5487A', '#7A5BC7'];
 const DAY_FULL: Record<string, string> = { Du: 'Dushanba', Se: 'Seshanba', Chor: 'Chorshanba', Pa: 'Payshanba', Ju: 'Juma', Sha: 'Shanba', Ya: 'Yakshanba' };
 
-export function GroupsView({ groups, courses, teachers, groupOpts, detail, role, tab, branches, currentBranch }: { groups: G[]; courses: C[]; teachers: { id: number; name: string; role: string }[]; groupOpts: GroupOpt[]; detail: Detail | null; role: Role; tab: 'guruhlar' | 'yonalishlar'; branches: { id: number; name: string }[]; currentBranch: number | null }) {
+export function GroupsView({ groups, courses, teachers, groupOpts, detail, role, tab, branches, currentBranch, billingDefault }: { billingDefault: string; groups: G[]; courses: C[]; teachers: { id: number; name: string; role: string }[]; groupOpts: GroupOpt[]; detail: Detail | null; role: Role; tab: 'guruhlar' | 'yonalishlar'; branches: { id: number; name: string }[]; currentBranch: number | null }) {
   const router = useRouter();
   const path = usePathname();
   const [edit, setEdit] = useState<G | 'new' | null>(null);
@@ -98,6 +98,7 @@ export function GroupsView({ groups, courses, teachers, groupOpts, detail, role,
                         {branches.length > 1 && !currentBranch && <>, {branches.find((b) => b.id === g.branchId)?.name}</>}
                       </div>
                     </div>
+                    {g.billing === 'dars' && g.active && <Badge tone="info">Dars bo&apos;yicha</Badge>}
                     {!g.active && <Badge>Yopilgan</Badge>}
                   </div>
                   <div className="mt-3 space-y-1.5 text-[13px]">
@@ -177,7 +178,7 @@ export function GroupsView({ groups, courses, teachers, groupOpts, detail, role,
       )}
 
       <Modal open={!!edit} onClose={() => setEdit(null)} title={edit === 'new' ? 'Yangi guruh' : 'Guruhni tahrirlash'}>
-        {edit && <GroupForm g={edit === 'new' ? null : edit} courses={courses.filter((c) => c.active)} teachers={teachers} branches={branches} currentBranch={currentBranch} onDone={() => setEdit(null)} />}
+        {edit && <GroupForm g={edit === 'new' ? null : edit} courses={courses.filter((c) => c.active)} teachers={teachers} branches={branches} currentBranch={currentBranch} billingDefault={billingDefault} onDone={() => setEdit(null)} />}
       </Modal>
       <Modal open={!!course} onClose={() => setCourse(null)} title={course === 'new' ? "Yangi yo'nalish" : "Yo'nalishni tahrirlash"} size="sm">
         {course && <CourseForm c={course === 'new' ? null : course} onDone={() => setCourse(null)} />}
@@ -322,7 +323,7 @@ function GroupDrawer({ g, d, manage, role, groupOpts, onEdit, onClose }: { g: G;
   );
 }
 
-function GroupForm({ g, courses, teachers, branches, currentBranch, onDone }: { g: G | null; courses: C[]; teachers: { id: number; name: string; role: string }[]; branches: { id: number; name: string }[]; currentBranch: number | null; onDone: () => void }) {
+function GroupForm({ g, courses, teachers, branches, currentBranch, billingDefault, onDone }: { billingDefault: string; g: G | null; courses: C[]; teachers: { id: number; name: string; role: string }[]; branches: { id: number; name: string }[]; currentBranch: number | null; onDone: () => void }) {
   const days = new Set((g?.days ?? 'Du,Chor,Ju').split(','));
   return (
     <ActionForm action={saveGroup.bind(null, g?.id ?? null)} onDone={onDone} onCancel={onDone} submitLabel={g ? 'Saqlash' : 'Guruh ochish'}>
@@ -387,6 +388,7 @@ function GroupForm({ g, courses, teachers, branches, currentBranch, onDone }: { 
           <input type="number" name="capacity" min={1} defaultValue={g?.capacity ?? 14} className="field" />
         </Field>
       </div>
+      <BillingChoice value={g?.billing ?? billingDefault} />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Boshlangan sana">
           <input type="date" name="startDate" defaultValue={g?.startDate ?? ''} className="field" />
@@ -404,6 +406,35 @@ function GroupForm({ g, courses, teachers, branches, currentBranch, onDone }: { 
         )}
       </div>
     </ActionForm>
+  );
+}
+
+/** Hisob turi tanlovi: tushuntirish bilan, ikki katta variant */
+function BillingChoice({ value }: { value: string }) {
+  const [v, setV] = useState(value === 'dars' ? 'dars' : 'oylik');
+  const opts = [
+    { k: 'oylik', t: 'Oylik', d: "Har oy boshida oylik narx to'liq yechiladi" },
+    { k: 'dars', t: "Dars bo'yicha", d: "Faqat qatnashgan darslar uchun: oylik narx ÷ oydagi darslar" },
+  ];
+  return (
+    <fieldset>
+      <legend className="label">To&apos;lov qanday hisoblanadi</legend>
+      <input type="hidden" name="billing" value={v} />
+      <div className="grid gap-2 sm:grid-cols-2">
+        {opts.map((o) => (
+          <button
+            type="button"
+            key={o.k}
+            onClick={() => setV(o.k)}
+            aria-pressed={v === o.k}
+            className={cn('rounded-xl border px-3.5 py-2.5 text-left transition-colors', v === o.k ? 'border-brand bg-brand-soft' : 'border-line hover:bg-canvas')}
+          >
+            <div className="text-sm font-bold">{o.t}</div>
+            <div className="text-xs text-fg-muted">{o.d}</div>
+          </button>
+        ))}
+      </div>
+    </fieldset>
   );
 }
 

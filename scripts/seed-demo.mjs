@@ -18,7 +18,7 @@ const today = tz(new Date());
 const addDays = (s, n) => { const d = s instanceof Date ? new Date(s) : new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const rnd = (a) => a[Math.floor(Math.random() * a.length)];
 
-await sql`truncate auth_attempts, audit_log, payme_transactions, branches, lesson_progress, course_orders, promo_codes, learners, course_lessons, course_modules, online_courses, staff_reports, tasks, graduates, results, grades, notes, leads, reconciliations, transactions, payments, attendance, lessons, enrollments, students, groups, courses, users, settings restart identity cascade`;
+await sql`truncate salary_payouts, staff_adjustments, cash_transfers, cashboxes, charges, auth_attempts, audit_log, payme_transactions, branches, lesson_progress, course_orders, promo_codes, learners, course_lessons, course_modules, online_courses, staff_reports, tasks, graduates, results, grades, notes, leads, reconciliations, transactions, payments, attendance, lessons, enrollments, students, groups, courses, users, settings restart identity cascade`;
 const hash = await bcrypt.hash('123456', 10);
 await sql`insert into settings (id, center_name) values (1, 'United IT Clubs')`;
 const [br1] = await sql`insert into branches (name, address) values ('Davlatobod filiali', 'Davlatobod tumani') returning id`;
@@ -32,6 +32,9 @@ const staff = await sql`insert into users ${sql([
   { full_name: 'Nodira Karimova', phone: '998905555555', password_hash: hash, role: 'bugalter', base_salary: 3000000, branch_id: null },
 ])} returning id, role`;
 const [admin, t1, t2, sales, buh] = staff.map((s) => s.id);
+await sql`update users set teacher_percent = 30 where id in (${t1}, ${t2})`;
+await sql`insert into cashboxes (name, is_main) values ('Asosiy kassa', true)`;
+await sql`insert into cashboxes (name, owner_id, branch_id) values ('Administrator kassasi', ${admin}, ${br1.id})`;
 const courses = await sql`insert into courses ${sql([
   { name: 'Kompyuter savodxonligi', monthly_price: 300000, duration_months: 3, color: '#3D6FD1' },
   { name: "Sun'iy intellekt (AI)", monthly_price: 450000, duration_months: 3, color: '#008A70' },

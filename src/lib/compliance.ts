@@ -5,6 +5,7 @@ import type { Role } from '@/db/schema';
 import { addDays, groupHasLessonOn, monthStart, weekday } from './dates';
 import { getSettings } from './settings';
 import { andBranch } from './branch';
+import { ensureMonthlyCharges } from './billing';
 
 export type Item = { key: string; label: string; done: number; total: number; href?: string; hint?: string };
 export type StaffDay = { id: number; fullName: string; role: Role; items: Item[]; score: number | null };
@@ -26,6 +27,7 @@ export function scoreOf(items: Item[]) {
 type Base = Awaited<ReturnType<typeof loadBase>>;
 
 async function loadBase(date: string, branch: number | null = null) {
+  await ensureMonthlyCharges();
   const week = weekRange(date);
   const month = date.slice(0, 7);
   const prevMonth = (() => {
@@ -64,11 +66,8 @@ async function loadBase(date: string, branch: number | null = null) {
     db.execute<{ debtors: number; reminded: number }>(sql`
       with bal as (
         select s.id,
-          coalesce((select sum(amount) from payments p where p.student_id = s.id and p.paid_at <= ${date}), 0)
-          - coalesce((select sum(e.monthly_fee * greatest(0,
-              (extract(year from least(coalesce(e.end_date, ${date}::date), ${date}::date)) * 12 + extract(month from least(coalesce(e.end_date, ${date}::date), ${date}::date)))
-              - (extract(year from e.start_date) * 12 + extract(month from e.start_date)) + 1))
-            from enrollments e where e.student_id = s.id and e.start_date <= ${date}), 0) as balance
+          coalesce((select sum(amount) from payments p where p.student_id = s.id and p.cancelled_at is null and p.paid_at <= ${date}), 0)
+          - coalesce((select sum(c.amount) from charges c where c.student_id = s.id and c.date <= ${date}), 0) as balance
         from students s where s.status in ('faol','xavf') ${andBranch('s.branch_id', branch)}
       )
       select count(*) filter (where balance < 0)::int debtors,

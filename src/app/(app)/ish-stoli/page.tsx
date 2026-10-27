@@ -6,6 +6,7 @@ import { adminChecklist } from '@/lib/compliance';
 import { getBalances } from '@/lib/finance';
 import { addDays, today } from '@/lib/dates';
 import { DeskView } from './view';
+import { cashboxBalances } from '@/lib/cashbox';
 import { andBranch, getBranchScope } from '@/lib/branch';
 
 export const metadata = { title: 'Ish stoli' };
@@ -17,7 +18,7 @@ export default async function DeskPage() {
   const B = scope.id;
   const { items, score, base } = await adminChecklist(t, user.id, B);
 
-  const [groupsInfo, absents, streak, pays, myTasks, myReport, reminded, students] = await Promise.all([
+  const [groupsInfo, absents, streak, pays, myTasks, myReport, reminded, students, unfreeze] = await Promise.all([
     db.execute<{ id: number; name: string; course: string; color: string; teacher: string | null; room: string | null; start_time: string; end_time: string; students: number }>(sql`
       select g.id, g.name, c.name course, c.color, u.full_name teacher, g.room, g.start_time, g.end_time,
         (select count(*) from enrollments e where e.group_id = g.id and e.active and e.end_date is null)::int students
@@ -31,14 +32,23 @@ export default async function DeskPage() {
       select student_id from (
         select student_id, status, row_number() over (partition by student_id order by date desc) rn from attendance
       ) x where rn <= 2 group by student_id having count(*) = 2 and count(*) filter (where status = 'kelmadi') = 2`),
-    db.execute<{ c: number; s: string; cash: string }>(sql`select count(*)::int c, coalesce(sum(amount),0) s, coalesce(sum(amount) filter (where method = 'naqd'),0) cash from payments p where p.paid_at = ${t} ${B ? sql`and p.branch_id = ${B}` : sql``}`),
+    db.execute<{ c: number; s: string; cash: string }>(sql`select count(*)::int c, coalesce(sum(amount),0) s, coalesce(sum(amount) filter (where method = 'naqd'),0) cash from payments p where p.cancelled_at is null and p.paid_at = ${t} ${B ? sql`and p.branch_id = ${B}` : sql``}`),
     db.select({ id: tasks.id, title: tasks.title, dueDate: tasks.dueDate, priority: tasks.priority, status: tasks.status }).from(tasks).where(and(eq(tasks.assigneeId, user.id), ne(tasks.status, 'bajarildi'))).orderBy(asc(tasks.dueDate)).limit(8),
     db.select({ id: staffReports.id, done: staffReports.done }).from(staffReports).where(and(eq(staffReports.userId, user.id), eq(staffReports.date, t))).orderBy(desc(staffReports.id)).limit(1),
     db.execute<{ entity_id: number }>(sql`select distinct entity_id from notes where entity_type = 'student' and kind = 'qongiroq' and text like 'To''lov%' and created_at >= now() - interval '7 days'`),
     db.execute<{ id: number; name: string; parent_phone: string | null; phone: string | null; parent_name: string | null }>(sql`select id, full_name name, parent_phone, phone, parent_name from students where status in ('faol','xavf') ${andBranch('branch_id', B)}`),
+    db.execute<{ id: number; name: string; phone: string | null; until: string; reason: string | null }>(sql`
+      select id, full_name name, coalesce(parent_phone, phone) phone, freeze_until::text until, left_reason reason from students
+      where status = 'muzlatilgan' and freeze_until <= ${addDays(t, 2)} ${andBranch('branch_id', B)} order by freeze_until`),
   ]);
 
   const balances = await getBalances(t);
+  const allBoxes = await cashboxBalances();
+  const myBox = allBoxes.find((b) => b.ownerId === user.id && b.active) ?? null;
+  const myPending = myBox
+    ? await db.execute<{ id: number; amount: number; method: string; from: string }>(sql`
+        select t.id, t.amount, t.method, f.name "from" from cash_transfers t join cashboxes f on f.id = t.from_id where t.to_id = ${myBox.id} and t.status = 'kutilmoqda' order by t.id`)
+    : [];
   const remindedSet = new Set(reminded.map((r) => r.entity_id));
   const debtors = students
     .map((s) => ({ ...s, debt: -(balances.get(s.id)?.balance ?? 0), months: balances.get(s.id)?.overdueMonths ?? 0, reminded: remindedSet.has(s.id) }))
@@ -70,6 +80,9 @@ export default async function DeskPage() {
       tasks={myTasks}
       reportDone={myReport.length > 0}
       dueDay={base.dueDay}
+      unfreeze={[...unfreeze]}
+      myBox={myBox ? { box: myBox, targets: allBoxes.filter((b) => b.active), pending: [...myPending] } : null}
+      me={{ id: user.id, role: user.role }}
     />
   );
 }
