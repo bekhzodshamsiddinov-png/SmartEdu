@@ -71,3 +71,12 @@ export const CATEGORY_TO_RECON: Record<string, string> = {
   Jihozlar: 'boshqa',
   Boshqa: 'boshqa',
 };
+
+/** Bitta o'quvchining joriy balansi (to'lovlar − yechimlar) */
+export async function studentBalance(studentId: number, ref = todayFn()) {
+  await ensureMonthlyCharges();
+  const [r] = await db.execute<{ p: string; c: string }>(sql`
+    select (select coalesce(sum(amount), 0) from payments where student_id = ${studentId} and cancelled_at is null and paid_at <= ${ref})::bigint p,
+           (select coalesce(sum(amount), 0) from charges where student_id = ${studentId} and date <= ${ref})::bigint c`);
+  return Number(r.p) - Number(r.c);
+}

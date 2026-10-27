@@ -19,6 +19,7 @@ export default async function GroupsPage({ searchParams }: { searchParams: Promi
   const mine = user.role === 'oqituvchi' || user.role === 'support';
   const scope = await getBranchScope();
   const branches = (await allBranches()).filter((b) => b.active);
+  const roomNames = (await db.execute<{ name: string }>(sql`select name from rooms where active order by name`)).map((r) => r.name);
   const [rows, counts, cs, teachers, gopts] = await Promise.all([
     db
       .select({
@@ -90,6 +91,7 @@ export default async function GroupsPage({ searchParams }: { searchParams: Promi
 
   return (
     <GroupsView
+      roomNames={roomNames}
       billingDefault={(await getSettings()).billingDefault}
       groups={list}
       courses={cs.map((c) => ({ id: c.id, name: c.name, price: c.monthly_price, duration: c.duration_months, color: c.color, description: c.description, active: c.active, groups: c.groups, students: c.students }))}

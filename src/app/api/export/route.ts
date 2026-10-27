@@ -12,12 +12,12 @@ function cell(x: unknown) {
 }
 
 /** Parol, 2FA va sessiya ma'lumotlari hech qachon eksport qilinmaydi */
-const SECRET_COLUMNS = new Set(['password_hash', 'totp_secret', 'totp_backup', 'totp_last_step', 'session_version']);
+const SECRET_COLUMNS = new Set(['password_hash', 'totp_secret', 'totp_backup', 'totp_last_step', 'session_version', 'cabinet_hash', 'telegram_link_code', 'telegram_chat_id']);
 function strip(rows: Record<string, unknown>[]) {
   return rows.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !SECRET_COLUMNS.has(k))));
 }
 
-const TABLES = ['settings', 'branches', 'users', 'courses', 'groups', 'students', 'enrollments', 'lessons', 'attendance', 'payments', 'transactions', 'reconciliations', 'leads', 'notes', 'grades', 'results', 'graduates', 'tasks', 'staff_reports', 'online_courses', 'course_modules', 'course_lessons', 'learners', 'promo_codes', 'course_orders', 'lesson_progress', 'payme_transactions', 'audit_log'];
+const TABLES = ['settings', 'branches', 'users', 'courses', 'groups', 'students', 'enrollments', 'lessons', 'attendance', 'payments', 'transactions', 'reconciliations', 'leads', 'notes', 'grades', 'results', 'graduates', 'tasks', 'staff_reports', 'online_courses', 'course_modules', 'course_lessons', 'learners', 'promo_codes', 'course_orders', 'lesson_progress', 'payme_transactions', 'charges', 'cashboxes', 'cash_transfers', 'reasons', 'staff_adjustments', 'salary_payouts', 'sales_plans', 'rooms', 'message_templates', 'outbox', 'coins', 'audit_log'];
 
 export const dynamic = 'force-dynamic';
 

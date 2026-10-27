@@ -6,7 +6,10 @@ import { attendance, lessons, groups, notes, reasons } from '@/db/schema';
 import { assertSection } from '@/lib/auth';
 import { run } from '@/lib/action';
 import { assertBranch } from '@/lib/branch';
-import { addDays, today } from '@/lib/dates';
+import { addDays, today, fmtDate } from '@/lib/dates';
+import { after } from 'next/server';
+import { syncAttendanceCoins } from '@/lib/coins';
+import { enqueue, flushOutbox } from '@/lib/messaging';
 
 type Mark = { studentId: number; status: 'keldi' | 'kelmadi' | 'kechikdi' | 'sababli'; reason?: string | null; reasonId?: number | null };
 
@@ -54,6 +57,13 @@ export async function saveAttendance(input: {
     }
     // "Dars bo'yicha" hisobdagi guruhda har bir dars uchun pul yechiladi
     await syncLessonCharges(input.groupId, input.date, u.id);
+    // Kelganlarga coin; bugungi kelmaganlar ota-onasiga xabar
+    await syncAttendanceCoins(input.groupId, input.date);
+    if (input.date === today()) {
+      const absent = await db.execute<{ id: number; student_id: number }>(sql`select id, student_id from attendance where group_id = ${input.groupId} and date = ${input.date} and status = 'kelmadi'`);
+      for (const a of absent) await enqueue('kelmadi', a.student_id, { guruh: g.name, sana: fmtDate(input.date) }, `absent:${a.id}`);
+      if (absent.length) after(() => flushOutbox(20).catch(() => 0));
+    }
     const teacherStatus = u.role === 'oqituvchi' || u.role === 'support' ? undefined : input.teacherStatus;
     await db
       .insert(lessons)

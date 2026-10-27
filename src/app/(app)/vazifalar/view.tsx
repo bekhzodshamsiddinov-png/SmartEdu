@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import Link from 'next/link';
 import { Plus, CalendarClock, Check, Play, RotateCcw, Trash2, ListChecks } from 'lucide-react';
 import { Badge, Button, Card, Empty, Field, PageHeader, cn } from '@/components/ui';
 import { Modal } from '@/components/modal';
@@ -9,7 +10,7 @@ import { useToast } from '@/components/toast';
 import { deleteTask, saveTask, setTaskStatus } from '@/app/actions/tasks';
 import { fmtShort, relative, today } from '@/lib/dates';
 
-type T = { id: number; title: string; description: string | null; assigneeId: number | null; assignee: string | null; creatorId: number | null; creator: string | null; dueDate: string | null; status: 'yangi' | 'jarayonda' | 'bajarildi'; priority: 'past' | 'orta' | 'yuqori'; doneAt: string | null; createdAt: string };
+type T = { entityType: string | null; entityId: number | null; autoKey: string | null; id: number; title: string; description: string | null; assigneeId: number | null; assignee: string | null; creatorId: number | null; creator: string | null; dueDate: string | null; status: 'yangi' | 'jarayonda' | 'bajarildi'; priority: 'past' | 'orta' | 'yuqori'; doneAt: string | null; createdAt: string };
 
 const COLS: { k: T['status']; l: string }[] = [
   { k: 'yangi', l: 'Yangi' },
@@ -25,9 +26,23 @@ export function TasksView({ rows, staff, meId, isBoss, canAssign, openNew }: { r
   const [, start] = useTransition();
   const [scope, setScope] = useState<'men' | 'hamma'>(canAssign ? 'hamma' : 'men');
   const [who, setWho] = useState('');
+  const [mode, setMode] = useState<'muddat' | 'holat'>('muddat');
   const [edit, setEdit] = useState<T | 'new' | null>(openNew ? 'new' : null);
   useEffect(() => setEdit(openNew ? 'new' : null), [openNew]);
   const t = today();
+  const week = (() => {
+    const d = new Date(t + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + 7);
+    return d.toISOString().slice(0, 10);
+  })();
+  const DUE_COLS: { k: string; l: string; tone?: string; test: (r: T) => boolean }[] = [
+    { k: 'otgan', l: "O'tib ketgan", tone: 'text-bad', test: (r) => r.status !== 'bajarildi' && !!r.dueDate && r.dueDate < t },
+    { k: 'bugun', l: 'Bugun', test: (r) => r.status !== 'bajarildi' && r.dueDate === t },
+    { k: 'hafta', l: 'Shu hafta', test: (r) => r.status !== 'bajarildi' && !!r.dueDate && r.dueDate > t && r.dueDate <= week },
+    { k: 'keyin', l: 'Keyinroq', test: (r) => r.status !== 'bajarildi' && !!r.dueDate && r.dueDate > week },
+    { k: 'muddatsiz', l: 'Muddatsiz', test: (r) => r.status !== 'bajarildi' && !r.dueDate },
+    { k: 'bajarildi', l: 'Bajarildi', test: (r) => r.status === 'bajarildi' },
+  ];
   const list = useMemo(() => rows.filter((r) => (scope === 'hamma' || r.assigneeId === meId) && (!who || String(r.assigneeId) === who)), [rows, scope, who, meId]);
   const close = () => (openNew ? router.push(path) : setEdit(null));
   const move = (id: number, s: T['status']) =>
@@ -48,8 +63,16 @@ export function TasksView({ rows, staff, meId, isBoss, canAssign, openNew }: { r
           </Button>
         }
       />
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="inline-flex rounded-field border border-line bg-white p-1">
+          {(['muddat', 'holat'] as const).map((m) => (
+            <button key={m} onClick={() => setMode(m)} className={cn('rounded-[7px] px-3.5 py-1.5 text-[13px] font-bold', mode === m ? 'bg-ink text-white' : 'text-fg-muted')}>
+              {m === 'muddat' ? "Muddat bo'yicha" : "Holat bo'yicha"}
+            </button>
+          ))}
+        </div>
       {canAssign && (
-        <div className="mb-4 flex flex-wrap items-center gap-2">
+        <>
           <div className="inline-flex rounded-field border border-line bg-white p-1">
             {(['hamma', 'men'] as const).map((s) => (
               <button key={s} onClick={() => setScope(s)} className={cn('rounded-[7px] px-3.5 py-1.5 text-[13px] font-bold', scope === s ? 'bg-ink text-white' : 'text-fg-muted')}>
@@ -67,20 +90,21 @@ export function TasksView({ rows, staff, meId, isBoss, canAssign, openNew }: { r
               ))}
             </select>
           )}
-        </div>
+        </>
       )}
+      </div>
       {rows.length === 0 ? (
         <Card>
           <Empty icon={<ListChecks className="h-5 w-5" />} title="Hali vazifa yo'q" text="Har dushanba haftaning 3 ta asosiy vazifasini shu yerga qo'ying." action={<Button onClick={() => setEdit('new')}>Vazifa berish</Button>} />
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-3">
-          {COLS.map((c) => {
-            const items = list.filter((r) => r.status === c.k).sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999'));
+        <div className={cn('grid gap-4', mode === 'holat' ? 'md:grid-cols-3' : 'md:grid-cols-2 xl:grid-cols-3')}>
+          {(mode === 'holat' ? COLS.map((c) => ({ k: c.k as string, l: c.l, tone: undefined as string | undefined, test: (r: T) => r.status === c.k })) : DUE_COLS).map((c) => {
+            const items = list.filter(c.test).sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999'));
             return (
               <section key={c.k} className="rounded-card border border-line bg-white/60">
                 <header className="flex items-center justify-between px-4 py-3">
-                  <h2 className="text-sm font-extrabold">{c.l}</h2>
+                  <h2 className={cn('text-sm font-extrabold', c.tone)}>{c.l}</h2>
                   <span className="text-xs font-bold text-fg-muted tnum">{items.length}</span>
                 </header>
                 <div className="space-y-2 px-2 pb-2">
@@ -96,6 +120,12 @@ export function TasksView({ rows, staff, meId, isBoss, canAssign, openNew }: { r
                           {r.priority !== 'orta' && <Badge tone={PR[r.priority].tone}>{PR[r.priority].l}</Badge>}
                         </div>
                         {r.description && <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-[13px] text-fg-muted">{r.description}</p>}
+                        {r.entityType && r.entityId && (
+                          <Link href={r.entityType === 'lead' ? `/lidlar?id=${r.entityId}` : r.entityType === 'group' ? `/guruhlar?id=${r.entityId}` : `/oquvchilar?id=${r.entityId}`} className="mt-1.5 inline-block text-xs font-bold text-brand hover:underline">
+                            Ochish
+                          </Link>
+                        )}
+                        {r.autoKey && <Badge tone="info" className="ml-2">Avtomatik</Badge>}
                         <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">
                           <span className="font-semibold text-fg">{r.assignee ?? '—'}</span>
                           {r.dueDate && (
@@ -106,7 +136,7 @@ export function TasksView({ rows, staff, meId, isBoss, canAssign, openNew }: { r
                           {r.creator && r.creatorId !== r.assigneeId && <span>bergan: {r.creator}</span>}
                           {r.doneAt && <span>{relative(r.doneAt)}</span>}
                         </div>
-                        <div className="mt-3 flex gap-1.5">
+                        <div className="mt-3 flex flex-wrap gap-1.5">
                           {r.status === 'yangi' && (
                             <Button size="sm" variant="secondary" onClick={() => move(r.id, 'jarayonda')}>
                               <Play className="h-3.5 w-3.5" /> Boshlash

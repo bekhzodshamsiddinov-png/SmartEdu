@@ -38,7 +38,7 @@ export async function createStudent(fd: FormData) {
         phone: p ? normalizePhone(p) : null,
         parentName: str(fd, 'parentName'),
         parentPhone: pp ? normalizePhone(pp) : null,
-        birthYear: int(fd, 'birthYear'),
+        ...birth(fd),
         school: str(fd, 'school'),
         address: str(fd, 'address'),
         source: str(fd, 'source'),
@@ -77,7 +77,7 @@ export async function updateStudent(id: number, fd: FormData) {
         phone: p ? normalizePhone(p) : null,
         parentName: str(fd, 'parentName'),
         parentPhone: pp ? normalizePhone(pp) : null,
-        birthYear: int(fd, 'birthYear'),
+        ...birth(fd),
         school: str(fd, 'school'),
         address: str(fd, 'address'),
         source: str(fd, 'source'),
@@ -99,6 +99,17 @@ async function assertOwnStudent(u: { id: number; role: string }, studentId: numb
 }
 
 const canSetFee = (role: string) => role === 'rahbar' || role === 'admin';
+
+/** Tug'ilgan sana (yil ham shundan olinadi); eski "yil" maydoni bo'lsa — uni saqlaymiz */
+function birth(fd: FormData) {
+  const d = str(fd, 'birthDate');
+  if (d) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d < '1950-01-01' || d > today()) throw new Error("Tug'ilgan sana noto'g'ri.");
+    return { birthDate: d, birthYear: Number(d.slice(0, 4)) };
+  }
+  if (fd.has('birthYear')) return { birthYear: int(fd, 'birthYear') };
+  return fd.has('birthDate') ? { birthDate: null } : {};
+}
 
 /** Holatni o'zgartirish: ketdi / bitirdi / muzlatildi / qayta faollashtirildi */
 export async function changeStatus(id: number, fd: FormData) {

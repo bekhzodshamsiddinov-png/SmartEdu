@@ -1,4 +1,8 @@
 'use server';
+import { after } from 'next/server';
+import { studentBalance } from '@/lib/finance';
+import { onTimePaymentCoin } from '@/lib/coins';
+import { enqueue, flushOutbox } from '@/lib/messaging';
 import { desc, eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { payments, enrollments, notes } from '@/db/schema';
@@ -56,6 +60,10 @@ export async function addPayment(fd: FormData) {
     }).returning({ id: payments.id });
     const [sn] = await db.select({ n: students.fullName }).from(students).where(eq(students.id, studentId));
     await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: "To'lov qabul qilindi", detail: `${sn?.n}: ${money(amount)} (${method}, ${paidAt})` });
+    const bal = await studentBalance(studentId);
+    await onTimePaymentCoin(studentId, paidAt, bal);
+    await enqueue('tolov', studentId, { summa: money(amount), qoldiq: bal < 0 ? `qarz ${money(-bal)}` : money(bal) }, `pay:${ins.id}`);
+    after(() => flushOutbox(10).catch(() => 0));
     return { id: ins.id, message: "To'lov qabul qilindi" };
   });
 }

@@ -18,7 +18,7 @@ const today = tz(new Date());
 const addDays = (s, n) => { const d = s instanceof Date ? new Date(s) : new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const rnd = (a) => a[Math.floor(Math.random() * a.length)];
 
-await sql`truncate salary_payouts, staff_adjustments, cash_transfers, cashboxes, charges, auth_attempts, audit_log, payme_transactions, branches, lesson_progress, course_orders, promo_codes, learners, course_lessons, course_modules, online_courses, staff_reports, tasks, graduates, results, grades, notes, leads, reconciliations, transactions, payments, attendance, lessons, enrollments, students, groups, courses, users, settings restart identity cascade`;
+await sql`truncate coins, outbox, sales_plans, rooms, job_runs, salary_payouts, staff_adjustments, cash_transfers, cashboxes, charges, auth_attempts, audit_log, payme_transactions, branches, lesson_progress, course_orders, promo_codes, learners, course_lessons, course_modules, online_courses, staff_reports, tasks, graduates, results, grades, notes, leads, reconciliations, transactions, payments, attendance, lessons, enrollments, students, groups, courses, users, settings restart identity cascade`;
 const hash = await bcrypt.hash('123456', 10);
 await sql`insert into settings (id, center_name) values (1, 'United IT Clubs')`;
 const [br1] = await sql`insert into branches (name, address) values ('Davlatobod filiali', 'Davlatobod tumani') returning id`;
@@ -35,6 +35,8 @@ const [admin, t1, t2, sales, buh] = staff.map((s) => s.id);
 await sql`update users set teacher_percent = 30 where id in (${t1}, ${t2})`;
 await sql`insert into cashboxes (name, is_main) values ('Asosiy kassa', true)`;
 await sql`insert into cashboxes (name, owner_id, branch_id) values ('Administrator kassasi', ${admin}, ${br1.id})`;
+await sql`insert into rooms (name, branch_id, capacity) values ('1', ${br1.id}, 15), ('2', ${br1.id}, 12), ('1', ${br2.id}, 10), ('3', ${br2.id}, 14)`;
+await sql`insert into sales_plans (user_id, month, target) values (${sales}, ${today.slice(0, 7)}, 12)`;
 const courses = await sql`insert into courses ${sql([
   { name: 'Kompyuter savodxonligi', monthly_price: 300000, duration_months: 3, color: '#3D6FD1' },
   { name: "Sun'iy intellekt (AI)", monthly_price: 450000, duration_months: 3, color: '#008A70' },
@@ -149,5 +151,7 @@ await mk("YouTube blogging: noldan daromadgacha", 'youtube-blogging', 'youtube',
    ['Kontent', ["Ssenariy yozish", 'Telefonda suratga olish', 'CapCut da montaj', 'Amaliy topshiriq']],
    ['O\'sish', ['SEO: nom, tavsif, teglar', 'Monetizatsiya', 'Amaliy topshiriq']]],
   "O'z mavzungizda kanal ochish\nTelefonda sifatli video olish va montaj qilish\nVideolarni qidiruvda chiqarish\nKanaldan daromad olish yo'llari", "Blog ochmoqchi bo'lganlar\nBiznesini YouTube orqali rivojlantirmoqchilar");
+await sql`update students set birth_date = make_date(coalesce(birth_year, 2010), 1 + (id % 12), 1 + (id % 27)) where birth_year is not null`;
+await sql`update leads set call_status = 'qayta_qongiroq', next_call_at = ${today} where id in (select id from leads where stage in ('yangi','boglanildi') order by id limit 3)`;
 console.log('Demo tayyor:', studentIds.length, "o'quvchi");
 await sql.end();

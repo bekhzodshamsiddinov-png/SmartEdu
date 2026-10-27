@@ -1,6 +1,6 @@
-export type ActionResult = { ok: true; message?: string; id?: number } | { ok: false; error: string };
+export type ActionResult = { ok: true; message?: string; id?: number; url?: string; bot?: string | null } | { ok: false; error: string };
 
-export async function run(fn: () => Promise<void | { message?: string; id?: number }>): Promise<ActionResult> {
+export async function run(fn: () => Promise<void | { message?: string; id?: number; url?: string; bot?: string | null }>): Promise<ActionResult> {
   try {
     const r = await fn();
     return { ok: true, ...(r || {}) };

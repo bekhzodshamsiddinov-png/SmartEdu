@@ -1,3 +1,4 @@
+import { DEFAULT_CONTRACT } from '@/lib/contract';
 import { sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { requireSection } from '@/lib/auth';
@@ -31,5 +32,5 @@ export default async function SettingsPage() {
     select r.id, r.kind, r.title, r.charges, r.active,
       ((select count(*) from attendance a where a.reason_id = r.id))::int used
     from reasons r order by r.kind, r.active desc, r.position, r.title`);
-  return <SettingsView reasonRows={[...reasonRows]} auditRows={[...auditRows]} integrations={integrations} academy={academy} branches={[...branches]} s={{ centerName: s.centerName, phone: s.phone, address: s.address, paymentDueDay: s.paymentDueDay, salaryDay: s.salaryDay, reservePercent: s.reservePercent, billingDefault: s.billingDefault, chargeAbsent: s.chargeAbsent, prorateFirstMonth: s.prorateFirstMonth }} counts={c} />;
+  return <SettingsView defaultContract={DEFAULT_CONTRACT} reasonRows={[...reasonRows]} auditRows={[...auditRows]} integrations={integrations} academy={academy} branches={[...branches]} s={{ centerName: s.centerName, phone: s.phone, address: s.address, paymentDueDay: s.paymentDueDay, salaryDay: s.salaryDay, reservePercent: s.reservePercent, billingDefault: s.billingDefault, chargeAbsent: s.chargeAbsent, prorateFirstMonth: s.prorateFirstMonth, coinsPerLesson: s.coinsPerLesson, coinsOnTimePay: s.coinsOnTimePay, debtNoticeMin: s.debtNoticeMin, absentTaskAfter: s.absentTaskAfter, contractTemplate: s.contractTemplate }} counts={c} />;
 }

@@ -71,6 +71,13 @@
       "when": 1793091090691,
       "tag": "0009_money_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793116508475,
+      "tag": "0010_stage2_3",
+      "breakpoints": true
     }
   ]
 }

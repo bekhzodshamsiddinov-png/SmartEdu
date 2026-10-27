@@ -14,7 +14,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
   const creator = alias(users, 'creator');
   const boss = user.role === 'rahbar' || user.role === 'admin';
   const rows = await db
-    .select({ id: tasks.id, title: tasks.title, description: tasks.description, assigneeId: tasks.assigneeId, assignee: users.fullName, creatorId: tasks.creatorId, creator: creator.fullName, dueDate: tasks.dueDate, status: tasks.status, priority: tasks.priority, doneAt: tasks.doneAt, createdAt: tasks.createdAt })
+    .select({ entityType: tasks.entityType, entityId: tasks.entityId, autoKey: tasks.autoKey, id: tasks.id, title: tasks.title, description: tasks.description, assigneeId: tasks.assigneeId, assignee: users.fullName, creatorId: tasks.creatorId, creator: creator.fullName, dueDate: tasks.dueDate, status: tasks.status, priority: tasks.priority, doneAt: tasks.doneAt, createdAt: tasks.createdAt })
     .from(tasks)
     .leftJoin(users, eq(users.id, tasks.assigneeId))
     .leftJoin(creator, eq(creator.id, tasks.creatorId))

@@ -2,7 +2,7 @@
 import { Download, Database, ShieldCheck } from 'lucide-react';
 import { Card, CardHeader, Field } from '@/components/ui';
 import { ActionForm } from '@/components/action-form';
-import { saveSettings, saveAcademySettings, logoutEverywhere, saveReason, toggleReason } from '@/app/actions/staff';
+import { saveSettings, saveAcademySettings, logoutEverywhere, saveReason, toggleReason, saveAutomation, saveContractTemplate } from '@/app/actions/staff';
 import { saveBranch, toggleBranch } from '@/app/actions/branch';
 import { useEffect, useState } from 'react';
 import { Building2, Pencil, Plus, Power } from 'lucide-react';
@@ -29,7 +29,7 @@ export type AuditRow = { id: number; at: string; actorName: string | null; actor
 
 type Academy = { payCard: string | null; payCardHolder: string | null; telegram: string | null; instagram: string | null; academyTagline: string | null };
 
-export function SettingsView({ s, counts, branches, academy, integrations, auditRows, reasonRows }: { auditRows: AuditRow[]; academy: Academy; integrations: { click: boolean; payme: boolean; telegram: boolean; bunny: boolean }; branches: Br[]; s: { centerName: string; phone: string | null; address: string | null; paymentDueDay: number; salaryDay: number; reservePercent: number; billingDefault: string; chargeAbsent: boolean; prorateFirstMonth: boolean }; reasonRows: ReasonRow[]; counts: Record<string, number> }) {
+export function SettingsView({ s, counts, branches, academy, integrations, auditRows, reasonRows, defaultContract }: { auditRows: AuditRow[]; academy: Academy; integrations: { click: boolean; payme: boolean; telegram: boolean; bunny: boolean }; branches: Br[]; s: { centerName: string; phone: string | null; address: string | null; paymentDueDay: number; salaryDay: number; reservePercent: number; billingDefault: string; chargeAbsent: boolean; prorateFirstMonth: boolean; coinsPerLesson: number; coinsOnTimePay: number; debtNoticeMin: number; absentTaskAfter: number; contractTemplate: string | null }; reasonRows: ReasonRow[]; defaultContract: string; counts: Record<string, number> }) {
   return (
     <>
       <PageHeader title="Sozlamalar" sub="Markaz ma'lumotlari, to'lov qoidalari va ma'lumotlar zaxirasi" />
@@ -38,6 +38,8 @@ export function SettingsView({ s, counts, branches, academy, integrations, audit
         <AcademyCard a={academy} integrations={integrations} />
         <BranchesCard branches={branches} />
         <ReasonsCard rows={reasonRows} />
+        <AutomationCard s={s} />
+        <ContractCard value={s.contractTemplate} fallback={defaultContract} />
         <Card>
           <CardHeader title="Markaz va qoidalar" />
           <div className="px-5 pb-5">
@@ -206,6 +208,50 @@ function ReasonsCard({ rows }: { rows: ReasonRow[] }) {
           </ActionForm>
         )}
       </Modal>
+    </Card>
+  );
+}
+
+function AutomationCard({ s }: { s: { coinsPerLesson: number; coinsOnTimePay: number; debtNoticeMin: number; absentTaskAfter: number } }) {
+  return (
+    <Card>
+      <CardHeader title="Avtomatika" sub="Tizim o'zi bajaradigan ishlar. 0 — o'chirilgan." />
+      <div className="px-5 pb-5">
+        <ActionForm action={saveAutomation}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Coin: har bir kelgan dars uchun">
+              <input type="number" name="coinsPerLesson" min={0} max={100} defaultValue={s.coinsPerLesson} className="field" />
+            </Field>
+            <Field label="Coin: o'z vaqtida to'lov uchun" hint="To'lov kunigacha to'lab, qarzi qolmasa, oyiga bir marta">
+              <input type="number" name="coinsOnTimePay" min={0} max={1000} defaultValue={s.coinsOnTimePay} className="field" />
+            </Field>
+            <Field label="Qarz eslatmasi chegarasi, so'm" hint="Shundan katta qarz bo'lsa ota-onaga xabar ketadi">
+              <input type="number" name="debtNoticeMin" min={0} step={10000} defaultValue={s.debtNoticeMin} className="field" />
+            </Field>
+            <Field label="Ketma-ket necha marta kelmasa vazifa" hint="Administratorga avtomatik vazifa yaratiladi">
+              <input type="number" name="absentTaskAfter" min={0} max={10} defaultValue={s.absentTaskAfter} className="field" />
+            </Field>
+          </div>
+        </ActionForm>
+      </div>
+    </Card>
+  );
+}
+
+function ContractCard({ value, fallback }: { value: string | null; fallback: string }) {
+  return (
+    <Card>
+      <CardHeader title="Shartnoma shabloni" sub="O'quvchi profilidagi «Shartnoma» tugmasi shu matnni to'ldirib chop etadi" />
+      <div className="px-5 pb-5">
+        <ActionForm action={saveContractTemplate}>
+          <Field
+            label="Matn"
+            hint="O'zgaruvchilar: {oquvchi}, {ota_ona}, {ota_ona_tel}, {kurs}, {guruh}, {muddat}, {kunlar}, {vaqt}, {narx}, {tolov_kuni}, {sana}, {raqam}, {markaz}, {manzil}, {markaz_tel}, {shahar}. Bo'sh qoldirilsa — standart matn."
+          >
+            <textarea name="contractTemplate" rows={10} maxLength={20000} defaultValue={value ?? fallback} className="field font-mono text-xs" />
+          </Field>
+        </ActionForm>
+      </div>
     </Card>
   );
 }

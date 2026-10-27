@@ -26,7 +26,9 @@ export type Section =
   | 'reports'
   | 'settings'
   | 'online'
-  | 'onlineEdit';
+  | 'onlineEdit'
+  | 'schedule'
+  | 'messages';
 
 const ACCESS: Record<Section, Role[]> = {
   desk: ['admin', 'rahbar'],
@@ -45,6 +47,8 @@ const ACCESS: Record<Section, Role[]> = {
   settings: ['rahbar'],
   online: ['rahbar', 'marketing', 'admin', 'sotuv'],
   onlineEdit: ['rahbar', 'marketing'],
+  schedule: ['rahbar', 'admin', 'oqituvchi', 'support', 'sotuv'],
+  messages: ['rahbar', 'admin'],
 };
 
 export function can(role: Role, section: Section) {

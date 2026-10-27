@@ -74,7 +74,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
   if (pid) {
     const s = all.find((x) => x.id === pid);
     if (s && rows.some((r) => r.id === pid)) {
-      const [pays, att, grd, nts, res, attStat, led, frz] = await Promise.all([
+      const [pays, att, grd, nts, res, attStat, led, frz, cn] = await Promise.all([
         db.select({ id: payments.id, amount: payments.amount, method: payments.method, paidAt: payments.paidAt, forMonth: payments.forMonth, note: payments.note, by: users.fullName, cancelledAt: payments.cancelledAt, cancelReason: payments.cancelReason }).from(payments).leftJoin(users, eq(users.id, payments.receivedById)).where(eq(payments.studentId, pid)).orderBy(desc(payments.paidAt), desc(payments.id)),
         db.select({ id: attendance.id, date: attendance.date, status: attendance.status, reason: attendance.reason, group: groups.name }).from(attendance).innerJoin(groups, eq(groups.id, attendance.groupId)).where(eq(attendance.studentId, pid)).orderBy(desc(attendance.date)).limit(60),
         db.select({ id: grades.id, period: grades.period, score: grades.score, comment: grades.comment, by: users.fullName }).from(grades).leftJoin(users, eq(users.id, grades.teacherId)).where(eq(grades.studentId, pid)).orderBy(desc(grades.period), desc(grades.id)),
@@ -87,10 +87,13 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
           where c.student_id = ${pid} and c.date <= (now() at time zone 'Asia/Tashkent')::date
           order by c.date desc, c.id desc limit 200`),
         db.execute<{ title: string }>(sql`select title from reasons where kind = 'muzlatish' and active order by position, title`),
+        db.execute<{ amount: number; reason: string; d: string; by: string | null; total: number }>(sql`
+          select c.amount, c.reason, (c.created_at at time zone 'Asia/Tashkent')::date::text d, u.full_name by, sum(c.amount) over ()::int total
+          from coins c left join users u on u.id = c.created_by_id where c.student_id = ${pid} order by c.id desc limit 10`),
       ]);
       const b = balances.get(pid);
       profile = {
-        student: { ...s, createdAt: s.createdAt.toISOString() },
+        student: (({ cabinetHash, telegramChatId, telegramLinkCode, ...rest }) => ({ ...rest, createdAt: s.createdAt.toISOString(), cabinet: cabinetHash ? 1 : 0, telegram: telegramChatId ? 1 : 0 }))(s),
         enrollments: (byStudent.get(pid) ?? []).map((e) => ({ id: e.id, group: e.group, groupId: e.groupId, course: e.course, color: e.color, fee: showMoney ? e.fee : 0, startDate: e.startDate, endDate: e.endDate, active: e.active })),
         payments: showMoney ? pays.map(({ cancelledAt, ...x }) => ({ ...x, cancelled: !!cancelledAt })) : [],
         attendance: att,
@@ -100,6 +103,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
         balance: showMoney ? { charged: b?.charged ?? 0, paid: b?.paid ?? 0, balance: b?.balance ?? 0, fee: b?.monthlyFee ?? 0 } : { charged: 0, paid: 0, balance: 0, fee: 0 },
         ledger: showMoney ? led.map((r) => ({ ...r, amount: Number(r.amount) })) : [],
         freezeReasons: frz.map((r) => r.title),
+        coins: { total: cn[0]?.total ?? 0, rows: cn.map(({ total: _t, ...r }) => r) },
         attRate: attStat[0].total ? Math.round((attStat[0].present / attStat[0].total) * 100) : null,
       };
     }

@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import { after } from 'next/server';
+import { runDaily } from '@/lib/jobs';
 import { requireUser } from '@/lib/auth';
 import { can, ROLE_LABELS } from '@/lib/roles';
 import { NAV } from '@/components/shell/nav';
@@ -10,6 +12,14 @@ export const dynamic = 'force-dynamic';
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const user = await requireUser();
+  // Kunlik avtomatik ishlar sahifa javobidan keyin, fonda bajariladi (kuniga bir marta)
+  after(async () => {
+    try {
+      await runDaily();
+    } catch {
+      // fon ishi sahifaga ta'sir qilmaydi
+    }
+  });
   const s = await getSettings();
   const [branches, scope] = await Promise.all([allBranches(), getBranchScope()]);
   const items = NAV.filter((n) => can(user.role, n.section));

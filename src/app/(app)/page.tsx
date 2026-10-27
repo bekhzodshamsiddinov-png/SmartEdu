@@ -223,25 +223,35 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
               <p className="py-6 text-center text-sm text-fg-muted">Bu davrda lid kelmagan.</p>
             ) : (
               [
-                { l: 'Lidlar', v: fun.total },
-                { l: "Bog'lanildi", v: fun.contacted },
-                { l: 'Sinov darsiga yozildi', v: fun.trial },
-                { l: 'Sinov darsiga keldi', v: fun.came },
-                { l: "To'lov qildi", v: fun.paid },
-              ].map((s, i, arr) => (
-                <div key={s.l}>
-                  <div className="mb-1 flex items-baseline justify-between text-[13px]">
-                    <span className="font-semibold">{s.l}</span>
-                    <span className="tnum text-fg-muted">
-                      <b className="text-fg">{s.v}</b>
-                      {i > 0 && arr[i - 1].v > 0 && <span className="ml-1.5">{pct((s.v / arr[i - 1].v) * 100)}</span>}
-                    </span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-canvas">
-                    <div className="h-full rounded-full bg-brand" style={{ width: `${(s.v / fun.total) * 100}%`, opacity: 1 - i * 0.14 }} />
-                  </div>
-                </div>
-              ))
+                { l: 'Lidlar', v: fun.total, lost: fun.lost0, k: 'yangi' },
+                { l: "Bog'lanildi", v: fun.contacted, lost: fun.lost1, k: 'boglanildi' },
+                { l: 'Sinov darsiga yozildi', v: fun.trial, lost: fun.lost2, k: 'sinov_yozildi' },
+                { l: 'Sinov darsiga keldi', v: fun.came, lost: fun.lost3, k: 'sinov_keldi' },
+                { l: "To'lov qildi", v: fun.paid, lost: 0, k: 'tolov_qildi' },
+              ].map((s, i, arr) => {
+                const body = (
+                  <>
+                    <div className="mb-1 flex items-baseline justify-between text-[13px]">
+                      <span className="font-semibold">{s.l}</span>
+                      <span className="tnum text-fg-muted">
+                        <b className="text-fg">{s.v}</b>
+                        {i > 0 && arr[i - 1].v > 0 && <span className="ml-1.5">{pct((s.v / arr[i - 1].v) * 100)}</span>}
+                        {s.lost > 0 && <span className="ml-1.5 text-bad">−{s.lost} ketdi</span>}
+                      </span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-canvas">
+                      <div className="h-full rounded-full bg-brand" style={{ width: `${(s.v / fun.total) * 100}%`, opacity: 1 - i * 0.14 }} />
+                    </div>
+                  </>
+                );
+                return can(user.role, 'leads') ? (
+                  <Link key={s.l} href={`/lidlar?bosqich=${s.k}`} className="block rounded-lg hover:bg-canvas/60">
+                    {body}
+                  </Link>
+                ) : (
+                  <div key={s.l}>{body}</div>
+                );
+              })
             )}
             {fun.total > 0 && (
               <p className="pt-1 text-xs text-fg-muted">

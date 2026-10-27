@@ -39,8 +39,8 @@ export function StudentFields({ s }: { s?: Partial<Record<string, string | numbe
         <Field label="Telefon">
           <input name="phone" type="tel" defaultValue={(s?.phone as string) ?? ''} className="field" placeholder="90 123 45 67" />
         </Field>
-        <Field label="Tug'ilgan yili">
-          <input name="birthYear" type="number" min={1950} max={2025} defaultValue={(s?.birthYear as number) ?? ''} className="field" />
+        <Field label="Tug'ilgan sana" hint="Tug'ilgan kun tabrigi uchun">
+          <input name="birthDate" type="date" min="1950-01-01" max={todayStr()} defaultValue={(s?.birthDate as string) ?? ''} className="field" />
         </Field>
         <Field label="Ota-onasi ismi">
           <input name="parentName" defaultValue={(s?.parentName as string) ?? ''} className="field" />

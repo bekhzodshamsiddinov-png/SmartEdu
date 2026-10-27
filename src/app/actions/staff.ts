@@ -286,3 +286,34 @@ export async function toggleReason(id: number) {
     return { message: r.active ? "Sabab o'chirildi" : 'Sabab yoqildi' };
   });
 }
+
+/** Avtomatika: coinlar, qarz eslatmasi chegarasi, kelmaganlar uchun vazifa */
+export async function saveAutomation(fd: FormData) {
+  return run(async () => {
+    const u = await assertSection('settings');
+    const clamp = (k: string, lo: number, hi: number, d: number) => Math.min(hi, Math.max(lo, int(fd, k) ?? d));
+    await db
+      .update(settings)
+      .set({
+        coinsPerLesson: clamp('coinsPerLesson', 0, 100, 1),
+        coinsOnTimePay: clamp('coinsOnTimePay', 0, 1000, 5),
+        debtNoticeMin: clamp('debtNoticeMin', 0, 100_000_000, 100000),
+        absentTaskAfter: clamp('absentTaskAfter', 0, 10, 2),
+        updatedAt: new Date(),
+      })
+      .where(eq(settings.id, 1));
+    await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: "Avtomatika sozlamalari o'zgartirildi" });
+    return { message: 'Saqlandi' };
+  });
+}
+
+export async function saveContractTemplate(fd: FormData) {
+  return run(async () => {
+    const u = await assertSection('settings');
+    const t = str(fd, 'contractTemplate');
+    if (t && t.length > 20000) throw new Error('Shartnoma matni juda uzun.');
+    await db.update(settings).set({ contractTemplate: t, updatedAt: new Date() }).where(eq(settings.id, 1));
+    await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: "Shartnoma shabloni o'zgartirildi" });
+    return { message: 'Shartnoma shabloni saqlandi' };
+  });
+}

@@ -30,7 +30,7 @@ type Detail = {
 const COLORS = ['#008A70', '#3D6FD1', '#C2862A', '#B5487A', '#7A5BC7'];
 const DAY_FULL: Record<string, string> = { Du: 'Dushanba', Se: 'Seshanba', Chor: 'Chorshanba', Pa: 'Payshanba', Ju: 'Juma', Sha: 'Shanba', Ya: 'Yakshanba' };
 
-export function GroupsView({ groups, courses, teachers, groupOpts, detail, role, tab, branches, currentBranch, billingDefault }: { billingDefault: string; groups: G[]; courses: C[]; teachers: { id: number; name: string; role: string }[]; groupOpts: GroupOpt[]; detail: Detail | null; role: Role; tab: 'guruhlar' | 'yonalishlar'; branches: { id: number; name: string }[]; currentBranch: number | null }) {
+export function GroupsView({ groups, courses, teachers, groupOpts, detail, role, tab, branches, currentBranch, billingDefault, roomNames }: { roomNames: string[]; billingDefault: string; groups: G[]; courses: C[]; teachers: { id: number; name: string; role: string }[]; groupOpts: GroupOpt[]; detail: Detail | null; role: Role; tab: 'guruhlar' | 'yonalishlar'; branches: { id: number; name: string }[]; currentBranch: number | null }) {
   const router = useRouter();
   const path = usePathname();
   const [edit, setEdit] = useState<G | 'new' | null>(null);
@@ -178,7 +178,7 @@ export function GroupsView({ groups, courses, teachers, groupOpts, detail, role,
       )}
 
       <Modal open={!!edit} onClose={() => setEdit(null)} title={edit === 'new' ? 'Yangi guruh' : 'Guruhni tahrirlash'}>
-        {edit && <GroupForm g={edit === 'new' ? null : edit} courses={courses.filter((c) => c.active)} teachers={teachers} branches={branches} currentBranch={currentBranch} billingDefault={billingDefault} onDone={() => setEdit(null)} />}
+        {edit && <GroupForm g={edit === 'new' ? null : edit} courses={courses.filter((c) => c.active)} teachers={teachers} branches={branches} currentBranch={currentBranch} billingDefault={billingDefault} roomNames={roomNames} onDone={() => setEdit(null)} />}
       </Modal>
       <Modal open={!!course} onClose={() => setCourse(null)} title={course === 'new' ? "Yangi yo'nalish" : "Yo'nalishni tahrirlash"} size="sm">
         {course && <CourseForm c={course === 'new' ? null : course} onDone={() => setCourse(null)} />}
@@ -323,7 +323,7 @@ function GroupDrawer({ g, d, manage, role, groupOpts, onEdit, onClose }: { g: G;
   );
 }
 
-function GroupForm({ g, courses, teachers, branches, currentBranch, billingDefault, onDone }: { billingDefault: string; g: G | null; courses: C[]; teachers: { id: number; name: string; role: string }[]; branches: { id: number; name: string }[]; currentBranch: number | null; onDone: () => void }) {
+function GroupForm({ g, courses, teachers, branches, currentBranch, billingDefault, roomNames, onDone }: { roomNames: string[]; billingDefault: string; g: G | null; courses: C[]; teachers: { id: number; name: string; role: string }[]; branches: { id: number; name: string }[]; currentBranch: number | null; onDone: () => void }) {
   const days = new Set((g?.days ?? 'Du,Chor,Ju').split(','));
   return (
     <ActionForm action={saveGroup.bind(null, g?.id ?? null)} onDone={onDone} onCancel={onDone} submitLabel={g ? 'Saqlash' : 'Guruh ochish'}>
@@ -382,7 +382,12 @@ function GroupForm({ g, courses, teachers, branches, currentBranch, billingDefau
           <input type="time" name="endTime" defaultValue={g?.endTime ?? '16:00'} className="field" required />
         </Field>
         <Field label="Xona">
-          <input name="room" defaultValue={g?.room ?? ''} className="field" />
+          <input name="room" list="room-list" defaultValue={g?.room ?? ''} className="field" autoComplete="off" />
+          <datalist id="room-list">
+            {roomNames.map((r) => (
+              <option key={r} value={r} />
+            ))}
+          </datalist>
         </Field>
         <Field label="Sig'imi">
           <input type="number" name="capacity" min={1} defaultValue={g?.capacity ?? 14} className="field" />

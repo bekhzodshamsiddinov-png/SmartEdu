@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { Search, UserPlus, Users, Wallet, Pencil, ArrowRightLeft, Phone, Plus, Trash2, Download, LogOut as LeaveIcon, Receipt } from 'lucide-react';
+import { Search, UserPlus, Users, Wallet, Pencil, ArrowRightLeft, Phone, Plus, Trash2, Download, LogOut as LeaveIcon, Receipt, Link2, FileText, Award, Coins, Copy } from 'lucide-react';
 import type { Role } from '@/db/schema';
 import { Avatar, Badge, Button, Card, Empty, Field, PageHeader, cn } from '@/components/ui';
 import { Drawer, Modal } from '@/components/modal';
@@ -10,6 +10,8 @@ import { MoneyInput } from '@/components/money-input';
 import { EditStudentForm, GroupSelect, NewStudentForm, PaymentForm, StatusForm, type GroupOpt } from '@/components/forms';
 import { addGrade, addNote, addResult, deleteStudent, endEnrollment, enroll, updateFee, updateReturn } from '@/app/actions/students';
 import { CancelPaymentButton } from '@/components/cancel-payment';
+import { createCabinetLink, giveCoins, revokeCabinetLink } from '@/app/actions/cabinet';
+import { useToast } from '@/components/toast';
 import { ATT_LABEL, NOTE_KINDS, PAY_METHOD_LABEL, RESULT_TYPES, RETURN_RESULTS, STUDENT_STATUS } from '@/lib/constants';
 import { money, phone } from '@/lib/format';
 import { fmtDate, fmtMonth, fmtShort, relative, today } from '@/lib/dates';
@@ -40,6 +42,7 @@ export type Profile = {
   attRate: number | null;
   ledger: { id: number; date: string; kind: string; amount: number; note: string | null; grp: string | null; status: string | null }[];
   freezeReasons: string[];
+  coins: { total: number; rows: { amount: number; reason: string; d: string; by: string | null }[] };
 };
 
 const FILTERS = [
@@ -365,7 +368,7 @@ function Ledger({ p }: { p: Profile }) {
 function ProfileDrawer({ p, groups, role, showMoney, onClose }: { p: Profile; groups: GroupOpt[]; role: Role; showMoney: boolean; onClose: () => void }) {
   const s = p.student;
   const [tab, setTab] = useState('umumiy');
-  const [modal, setModal] = useState<null | 'pay' | 'status' | 'edit' | 'enroll' | 'grade' | 'result' | 'return' | { fee: number; id: number }>(null);
+  const [modal, setModal] = useState<null | 'pay' | 'status' | 'edit' | 'enroll' | 'grade' | 'result' | 'return' | 'cabinet' | 'coin' | { fee: number; id: number }>(null);
   const canPay = role === 'rahbar' || role === 'admin' || role === 'bugalter';
   const canManage = role === 'rahbar' || role === 'admin';
   const st = STUDENT_STATUS[s.status];
@@ -417,6 +420,21 @@ function ProfileDrawer({ p, groups, role, showMoney, onClose }: { p: Profile; gr
           <Button size="sm" variant="secondary" onClick={() => setModal('edit')}>
             <Pencil className="h-4 w-4" /> Tahrirlash
           </Button>
+        )}
+        {canManage && (
+          <Button size="sm" variant="secondary" onClick={() => setModal('cabinet')}>
+            <Link2 className="h-4 w-4" /> Ota-ona kabineti
+          </Button>
+        )}
+        {(canManage || role === 'sotuv') && (
+          <a href={`/hujjat/shartnoma/${s.id}`} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-field px-2.5 text-[13px] font-bold text-fg-muted hover:bg-canvas hover:text-fg">
+            <FileText className="h-4 w-4" /> Shartnoma
+          </a>
+        )}
+        {s.status === 'bitirgan' && role !== 'bugalter' && (
+          <a href={`/hujjat/sertifikat/${s.id}`} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-field px-2.5 text-[13px] font-bold text-fg-muted hover:bg-canvas hover:text-fg">
+            <Award className="h-4 w-4" /> Sertifikat
+          </a>
         )}
       </div>
 
@@ -515,10 +533,40 @@ function ProfileDrawer({ p, groups, role, showMoney, onClose }: { p: Profile; gr
               </Section>
             )}
 
+            <Section
+              title={`Coin: ${p.coins.total}`}
+              action={
+                role !== 'bugalter' && role !== 'sotuv' && (
+                  <Button size="sm" variant="ghost" onClick={() => setModal('coin')}>
+                    <Coins className="h-4 w-4" /> Coin berish
+                  </Button>
+                )
+              }
+            >
+              {p.coins.rows.length === 0 ? (
+                <p className="px-4 py-3 text-sm text-fg-muted">Darsga kelgani va o&apos;z vaqtida to&apos;lagani uchun coin avtomatik beriladi.</p>
+              ) : (
+                <ul className="divide-y divide-line">
+                  {p.coins.rows.map((c, i) => (
+                    <li key={i} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
+                      <span className="min-w-0 truncate">
+                        {c.reason}
+                        <span className="ml-2 text-xs text-fg-muted">
+                          {fmtShort(c.d)}
+                          {c.by && `, ${c.by}`}
+                        </span>
+                      </span>
+                      <b className={cn('tnum', c.amount < 0 ? 'text-bad' : 'text-good')}>{c.amount > 0 ? `+${c.amount}` : c.amount}</b>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Section>
+
             <Section title="Shaxsiy ma'lumotlar">
               <dl className="grid gap-3 px-4 py-4 text-sm sm:grid-cols-2">
                 <Info label="Ota-onasi" value={s.parentName as string} />
-                <Info label="Tug'ilgan yili" value={s.birthYear ? String(s.birthYear) : null} />
+                <Info label="Tug'ilgan" value={s.birthDate ? fmtDate(s.birthDate as string) : s.birthYear ? String(s.birthYear) : null} />
                 <Info label="Maktab / o'qish joyi" value={s.school as string} />
                 <Info label="Qayerdan bildi" value={s.source as string} />
                 <Info label="Manzil" value={s.address as string} />
@@ -706,6 +754,21 @@ function ProfileDrawer({ p, groups, role, showMoney, onClose }: { p: Profile; gr
       <Modal open={modal === 'status'} onClose={() => setModal(null)} title="Holatni o'zgartirish" sub={s.fullName}>
         <StatusForm studentId={s.id} current={s.status} groups={groups} freezeReasons={p.freezeReasons} onDone={() => setModal(null)} onCancel={() => setModal(null)} />
       </Modal>
+      <Modal open={modal === 'cabinet'} onClose={() => setModal(null)} title="Ota-ona kabineti" sub="Ota-ona parolsiz kiradi: balans, davomat, baholar, coinlar" size="sm">
+        {modal === 'cabinet' && <CabinetLink id={s.id} active={!!s.cabinet} telegram={!!s.telegram} />}
+      </Modal>
+      <Modal open={modal === 'coin'} onClose={() => setModal(null)} title="Coin berish" size="sm">
+        {modal === 'coin' && (
+          <ActionForm action={giveCoins.bind(null, s.id)} onDone={() => setModal(null)} onCancel={() => setModal(null)}>
+            <Field label="Nechta coin" hint="Olib qo'yish uchun minus bilan yozing, masalan -5">
+              <input type="number" name="amount" min={-100} max={100} defaultValue={5} className="field" required />
+            </Field>
+            <Field label="Nima uchun">
+              <input name="reason" maxLength={120} className="field" placeholder="Masalan: uy vazifasini a'lo bajardi" required />
+            </Field>
+          </ActionForm>
+        )}
+      </Modal>
       <Modal open={modal === 'edit'} onClose={() => setModal(null)} title="Ma'lumotlarni tahrirlash">
         <EditStudentForm s={s} onDone={() => setModal(null)} onCancel={() => setModal(null)} />
       </Modal>
@@ -826,6 +889,65 @@ function Info({ label, value, className }: { label: string; value?: string | nul
     <div className={className}>
       <dt className="text-xs text-fg-muted">{label}</dt>
       <dd className="mt-0.5 font-semibold">{value || '—'}</dd>
+    </div>
+  );
+}
+
+function CabinetLink({ id, active, telegram }: { id: number; active: boolean; telegram: boolean }) {
+  const toast = useToast();
+  const [link, setLink] = useState<{ url: string; bot: string | null } | null>(null);
+  const copy = async (t: string) => {
+    try {
+      await navigator.clipboard.writeText(t);
+      toast('Nusxalandi');
+    } catch {
+      toast("Nusxalab bo'lmadi", 'err');
+    }
+  };
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-fg-muted">
+        {active ? 'Kabinet havolasi berilgan.' : 'Hali havola berilmagan.'} {telegram ? 'Ota-ona Telegram botga ulangan.' : ''} Yangi havola yaratilsa, eskisi ishlamay qoladi.
+      </p>
+      {link && (
+        <div className="space-y-2">
+          <div className="rounded-xl border border-line p-3">
+            <div className="text-xs font-semibold text-fg-muted">Kabinet havolasi</div>
+            <div className="mt-1 break-all text-sm">{link.url}</div>
+            <Button size="sm" variant="ghost" className="mt-1 -ml-2" onClick={() => copy(link.url)}>
+              <Copy className="h-4 w-4" /> Nusxa
+            </Button>
+          </div>
+          {link.bot && (
+            <div className="rounded-xl border border-line p-3">
+              <div className="text-xs font-semibold text-fg-muted">Telegram botga ulanish (xabarlar shu yerga keladi)</div>
+              <div className="mt-1 break-all text-sm">{link.bot}</div>
+              <Button size="sm" variant="ghost" className="mt-1 -ml-2" onClick={() => copy(link.bot!)}>
+                <Copy className="h-4 w-4" /> Nusxa
+              </Button>
+            </div>
+          )}
+          <p className="text-xs text-fg-muted">Havola faqat hozir ko&apos;rsatiladi — uni ota-onaga yuboring.</p>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <ActionButton
+          variant="primary"
+          action={async () => {
+            const r = await createCabinetLink(id);
+            if (r.ok && r.url) setLink({ url: r.url, bot: r.bot ?? null });
+            return r;
+          }}
+          confirm={active ? "Eski havola ishlamay qoladi. Yangisini yaratamizmi?" : undefined}
+        >
+          <Link2 className="h-4 w-4" /> {active ? 'Yangi havola' : 'Havola yaratish'}
+        </ActionButton>
+        {active && (
+          <ActionButton variant="ghost" action={revokeCabinetLink.bind(null, id)} confirm="Havola o'chirilsinmi? Ota-ona kabinetga kira olmaydi.">
+            Havolani o&apos;chirish
+          </ActionButton>
+        )}
+      </div>
     </div>
   );
 }

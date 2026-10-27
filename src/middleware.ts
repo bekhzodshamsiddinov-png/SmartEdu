@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { SESSION_COOKIE, verifySession } from '@/lib/session';
 
-const PUBLIC = ['/login', '/setup', '/akademiya', '/api/payme', '/api/click'];
+const PUBLIC = ['/login', '/setup', '/akademiya', '/ota-ona', '/api/payme', '/api/click', '/api/telegram'];
 const isPublic = (p: string) => PUBLIC.some((x) => p === x || p.startsWith(x + '/') || p.startsWith(x + '?'));
 
 /** Kontent xavfsizlik siyosati: faqat o'z skriptlarimiz (nonce bilan) ishlaydi — XSS bo'lsa ham begona kod ishga tushmaydi */
@@ -42,7 +42,7 @@ function withSecurity(req: NextRequest, redirectTo?: URL) {
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  if (pathname.startsWith('/api/payme') || pathname.startsWith('/api/click')) return NextResponse.next();
+  if (pathname.startsWith('/api/payme') || pathname.startsWith('/api/click') || pathname === '/api/telegram') return NextResponse.next();
   if (isPublic(pathname)) return withSecurity(req);
   const s = await verifySession(req.cookies.get(SESSION_COOKIE)?.value);
   if (!s) {

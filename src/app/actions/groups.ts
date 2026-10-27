@@ -7,6 +7,7 @@ import { groups, courses, enrollments, students } from '@/db/schema';
 import { assertSection } from '@/lib/auth';
 import { run, str, req, int, bool } from '@/lib/action';
 import { DAY_CODES } from '@/lib/dates';
+import { scheduleConflict } from '@/lib/schedule';
 import { assertBranch, assertStaffFor, resolveBranch } from '@/lib/branch';
 
 function onlyManagers(role: string) {
@@ -44,6 +45,9 @@ export async function saveGroup(id: number | null, fd: FormData) {
     const branchOf = v.branchId ?? (id ? (await db.select({ b: groups.branchId }).from(groups).where(eq(groups.id, id)))[0]?.b : null);
     await assertStaffFor(v.teacherId, ['oqituvchi', 'rahbar', 'admin'], branchOf);
     await assertStaffFor(v.supportId, ['support', 'oqituvchi', 'admin', 'rahbar'], branchOf);
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(v.startTime) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(v.endTime)) throw new Error("Vaqtni SS:DD ko'rinishida kiriting.");
+    const clash = await scheduleConflict({ id, days: v.days, startTime: v.startTime, endTime: v.endTime, room: v.room, teacherId: v.teacherId, branchId: branchOf });
+    if (clash) throw new Error(clash);
     const prevBilling = id ? (await db.select({ b: groups.billing }).from(groups).where(eq(groups.id, id)))[0]?.b : null;
     if (id) await db.update(groups).set(v).where(eq(groups.id, id));
     else await db.insert(groups).values(v);

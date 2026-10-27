@@ -52,6 +52,15 @@ export const settings = pgTable('settings', {
   telegram: text('telegram'),
   instagram: text('instagram'),
   academyTagline: text('academy_tagline'),
+  /** Shartnoma matni ({oquvchi}, {kurs}, {narx} va h.k. o'zgaruvchilar bilan) */
+  contractTemplate: text('contract_template'),
+  /** Coin: har bir kelgan dars uchun va o'z vaqtida to'lov uchun */
+  coinsPerLesson: integer('coins_per_lesson').notNull().default(1),
+  coinsOnTimePay: integer('coins_on_time_pay').notNull().default(5),
+  /** Qarz eslatmasi shu summadan oshganda yuboriladi */
+  debtNoticeMin: integer('debt_notice_min').notNull().default(100000),
+  /** Ketma-ket necha marta kelmasa administratorga vazifa yaratiladi (0 — o'chiq) */
+  absentTaskAfter: integer('absent_task_after').notNull().default(2),
   /** Yangi guruhlar uchun hisob turi: 'oylik' (har oy boshida) yoki 'dars' (har bir dars uchun) */
   billingDefault: text('billing_default').notNull().default('oylik'),
   /** Dars bo'yicha hisobda sababsiz kelmagan dars ham yechiladimi */
@@ -135,6 +144,7 @@ export const students = pgTable(
     parentName: text('parent_name'),
     parentPhone: text('parent_phone'),
     birthYear: integer('birth_year'),
+    birthDate: date('birth_date'),
     school: text('school'),
     address: text('address'),
     source: text('source'),
@@ -150,9 +160,15 @@ export const students = pgTable(
     graduatedAt: date('graduated_at'),
     note: text('note'),
     leadId: integer('lead_id'),
+    /** Ota-ona kabineti havolasining sha256 xeshi (havolaning o'zi saqlanmaydi) */
+    cabinetHash: text('cabinet_hash'),
+    /** Telegram botga ulangan ota-ona chat id si */
+    telegramChatId: text('telegram_chat_id'),
+    /** Telegram botga ulanish uchun bir martalik kod */
+    telegramLinkCode: text('telegram_link_code'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('students_status_idx').on(t.status)],
+  (t) => [index('students_status_idx').on(t.status), uniqueIndex('students_cabinet_uq').on(t.cabinetHash), uniqueIndex('students_tglink_uq').on(t.telegramLinkCode)],
 );
 
 export const enrollments = pgTable(
@@ -284,6 +300,10 @@ export const leads = pgTable(
     maxStage: integer('max_stage').notNull().default(0),
     assignedToId: integer('assigned_to_id').references(() => users.id),
     trialDate: date('trial_date'),
+    /** Oxirgi qo'ng'iroq natijasi: 'javob_bermadi' | 'qayta_qongiroq' | 'qiziqdi' | 'oylab_koradi' */
+    callStatus: text('call_status'),
+    /** Keyingi qo'ng'iroq sanasi */
+    nextCallAt: date('next_call_at'),
     lostReason: text('lost_reason'),
     note: text('note'),
     studentId: integer('student_id'),
@@ -371,10 +391,16 @@ export const tasks = pgTable(
     dueDate: date('due_date'),
     status: taskStatusEnum('status').notNull().default('yangi'),
     priority: priorityEnum('priority').notNull().default('orta'),
+    /** Tizim yaratgan vazifa kaliti — bir xil vazifa ikki marta yaratilmaydi */
+    autoKey: text('auto_key'),
+    /** Bog'langan yozuv: 'student' | 'lead' | 'group' */
+    entityType: text('entity_type'),
+    entityId: integer('entity_id'),
+    doneNote: text('done_note'),
     doneAt: timestamp('done_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('tasks_assignee_idx').on(t.assigneeId)],
+  (t) => [index('tasks_assignee_idx').on(t.assigneeId), uniqueIndex('tasks_auto_uq').on(t.autoKey)],
 );
 
 /** Xodimlarning kunlik / haftalik hisobotlari */
@@ -691,4 +717,88 @@ export const salaryPayouts = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex('payout_user_month_uq').on(t.userId, t.month)],
+);
+
+/* ===================== 2-bosqich: sotuv va boshqaruv ===================== */
+
+/** Sotuvchilarning oylik rejasi (nechta sotuv) */
+export const salesPlans = pgTable(
+  'sales_plans',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    month: text('month').notNull(),
+    target: integer('target').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('sales_plan_uq').on(t.userId, t.month)],
+);
+
+/** Xonalar (dars jadvali uchun) */
+export const rooms = pgTable('rooms', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  branchId: integer('branch_id').references(() => branches.id, { onDelete: 'set null' }),
+  capacity: integer('capacity').notNull().default(12),
+  active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Kunlik avtomatik ishlar bir kunda bir marta bajarilishi uchun */
+export const jobRuns = pgTable('job_runs', {
+  key: text('key').primaryKey(),
+  ranAt: timestamp('ran_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/* ===================== 3-bosqich: aloqa va o'quvchi tajribasi ===================== */
+
+/** Avtomatik xabar shablonlari (hodisa bo'yicha) */
+export const messageTemplates = pgTable('message_templates', {
+  event: text('event').primaryKey(),
+  body: text('body').notNull(),
+  active: boolean('active').notNull().default(true),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Yuboriladigan / yuborilgan xabarlar navbati */
+export const outbox = pgTable(
+  'outbox',
+  {
+    id: serial('id').primaryKey(),
+    event: text('event').notNull(),
+    studentId: integer('student_id').references(() => students.id, { onDelete: 'cascade' }),
+    branchId: integer('branch_id'),
+    /** 'sms' | 'telegram' */
+    channel: text('channel').notNull(),
+    to: text('to').notNull(),
+    body: text('body').notNull(),
+    /** 'navbatda' | 'yuborildi' | 'xato' | 'qolda' (ulanmagan — qo'lda yuboriladi) | 'bekor' */
+    status: text('status').notNull().default('navbatda'),
+    error: text('error'),
+    dedupeKey: text('dedupe_key'),
+    attempts: integer('attempts').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+  },
+  (t) => [uniqueIndex('outbox_dedupe_uq').on(t.dedupeKey), index('outbox_status_idx').on(t.status)],
+);
+
+/** Coin hisobi: davomat, o'z vaqtida to'lov va o'qituvchi rag'bati uchun */
+export const coins = pgTable(
+  'coins',
+  {
+    id: serial('id').primaryKey(),
+    studentId: integer('student_id')
+      .notNull()
+      .references(() => students.id, { onDelete: 'cascade' }),
+    amount: integer('amount').notNull(),
+    reason: text('reason').notNull(),
+    /** Avtomatik berilgan coin takrorlanmasligi uchun */
+    autoKey: text('auto_key'),
+    createdById: integer('created_by_id').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('coins_student_idx').on(t.studentId), uniqueIndex('coins_auto_uq').on(t.autoKey)],
 );

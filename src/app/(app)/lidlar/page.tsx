@@ -6,6 +6,8 @@ import { requireSection } from '@/lib/auth';
 import { courseOptions, groupOptions, staffOptions } from '@/lib/options';
 import { LeadsView } from './view';
 import { getBranchScope } from '@/lib/branch';
+import { salesProgress } from '@/lib/sales';
+import { thisMonth, today } from '@/lib/dates';
 
 export const metadata = { title: 'Lidlar' };
 
@@ -28,6 +30,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         assignedToId: leads.assignedToId,
         assigned: assignee.fullName,
         trialDate: leads.trialDate,
+        callStatus: leads.callStatus,
+        nextCallAt: leads.nextCallAt,
         lostReason: leads.lostReason,
         note: leads.note,
         studentId: leads.studentId,
@@ -42,6 +46,11 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     courseOptions(),
     staffOptions(['sotuv', 'admin', 'rahbar', 'marketing']),
     groupOptions(scope.id),
+  ]);
+  const month = thisMonth();
+  const [plan, lostReasons] = await Promise.all([
+    salesProgress(month, scope.id),
+    db.execute<{ title: string }>(sql`select title from reasons where kind = 'lid' and active order by position, title`),
   ]);
   const pid = Number(sp.id);
   const history = pid && rows.some((r) => r.id === pid)
@@ -62,6 +71,13 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       history={history.map((h) => ({ ...h, createdAt: h.createdAt.toISOString() }))}
       openNew={sp.yangi === '1'}
       meId={user.id}
+      plan={plan}
+      month={month}
+      isBoss={user.role === 'rahbar'}
+      today={today()}
+      lostReasons={lostReasons.map((r) => r.title)}
+      stageFilter={sp.bosqich ?? ''}
+      callsToday={sp.qongiroq === '1'}
     />
   );
 }

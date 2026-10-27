@@ -68,8 +68,12 @@ export async function leftReasons(from: string, to: string, branch: number | nul
 }
 
 export async function funnel(from: string, to: string, branch: number | null = null) {
-  const [r] = await db.execute<{ total: number; contacted: number; trial: number; came: number; paid: number; lost: number }>(sql`
+  const [r] = await db.execute<{ total: number; contacted: number; trial: number; came: number; paid: number; lost: number; lost0: number; lost1: number; lost2: number; lost3: number }>(sql`
     select count(*)::int total,
+      count(*) filter (where stage = 'rad_etdi' and max_stage = 0)::int lost0,
+      count(*) filter (where stage = 'rad_etdi' and max_stage = 1)::int lost1,
+      count(*) filter (where stage = 'rad_etdi' and max_stage = 2)::int lost2,
+      count(*) filter (where stage = 'rad_etdi' and max_stage >= 3)::int lost3,
       count(*) filter (where max_stage >= 1)::int contacted,
       count(*) filter (where max_stage >= 2)::int trial,
       count(*) filter (where max_stage >= 3)::int came,
