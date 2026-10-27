@@ -4,7 +4,11 @@ import { branches, courses } from '@/db/schema';
 import { getSettings } from '@/lib/settings';
 import { ApplyForm } from './form';
 
-export const metadata = { title: 'Kursga yozilish' };
+export const metadata = {
+  title: 'Bepul sinov darsiga yozilish',
+  description: "Kompyuter savodxonligi, sun'iy intellekt, YouTube va Fullstack dasturlash kurslariga bepul sinov darsiga yoziling. Menejer siz bilan bog'lanadi.",
+  alternates: { canonical: '/akademiya/ariza' },
+};
 
 export default async function ApplyPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const sp = await searchParams;

@@ -4,14 +4,25 @@ import { Phone, Send, Instagram, MapPin } from 'lucide-react';
 import { getLearner } from '@/lib/learner';
 import { getSettings } from '@/lib/settings';
 import { phone } from '@/lib/format';
+import type { Metadata } from 'next';
+import { siteUrl } from '@/lib/payments';
 
 export const dynamic = 'force-dynamic';
 
-export async function generateMetadata() {
+export async function generateMetadata(): Promise<Metadata> {
   const s = await getSettings();
+  const description = s.academyTagline || "Sun'iy intellekt (ChatGPT, AI vositalari) va YouTube bo'yicha amaliy onlayn kurslar o'zbek tilida. Video darslar, topshiriqlar va sertifikat.";
   return {
-    title: { default: `${s.centerName} Akademiya`, template: `%s · ${s.centerName} Akademiya` },
-    description: s.academyTagline || "Sun'iy intellekt va YouTube bo'yicha onlayn kurslar",
+    metadataBase: new URL(siteUrl()),
+    title: { default: `${s.centerName} Akademiya — AI va YouTube onlayn kurslari`, template: `%s · ${s.centerName} Akademiya` },
+    description,
+    applicationName: `${s.centerName} Akademiya`,
+    keywords: ["sun'iy intellekt kursi", 'ChatGPT kursi', 'AI kurslari', 'YouTube kursi', 'onlayn kurslar', "o'zbek tilida", 'Namangan IT kurslari', s.centerName],
+    alternates: { canonical: '/akademiya' },
+    openGraph: { type: 'website', siteName: `${s.centerName} Akademiya`, locale: 'uz_UZ', title: `${s.centerName} Akademiya`, description, url: '/akademiya' },
+    twitter: { card: 'summary_large_image', title: `${s.centerName} Akademiya`, description },
+    robots: { index: true, follow: true, googleBot: { index: true, follow: true, 'max-image-preview': 'large', 'max-snippet': -1 } },
+    formatDetection: { telephone: true },
   };
 }
 

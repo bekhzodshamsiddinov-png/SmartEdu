@@ -8,7 +8,7 @@ import { fmtDate } from '@/lib/dates';
 import { logoutLearner } from '@/app/actions/academy';
 import { ProfileForm } from './profile';
 
-export const metadata = { title: 'Kabinet' };
+export const metadata = { title: 'Kabinet', robots: { index: false, follow: false } };
 
 export default async function Cabinet() {
   const l = await requireLearner('/akademiya/kabinet');

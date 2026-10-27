@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import { getLearner } from '@/lib/learner';
 import { AuthForms } from './forms';
 
-export const metadata = { title: 'Kirish' };
+export const metadata = { title: 'Kirish', robots: { index: false, follow: false } };
 
 export default async function LearnerAuth({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const sp = await searchParams;

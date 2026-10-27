@@ -10,7 +10,7 @@ import { clickPayUrl, paymePayUrl, siteUrl } from '@/lib/payments';
 import { money } from '@/lib/format';
 import { CardPay } from './card-pay';
 
-export const metadata = { title: "To'lov" };
+export const metadata = { title: "To'lov", robots: { index: false, follow: false } };
 
 export default async function PayPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

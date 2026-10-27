@@ -6,7 +6,14 @@ import { publishedCourses, curriculum } from '@/lib/academy';
 import { getLearner } from '@/lib/learner';
 import { getSettings } from '@/lib/settings';
 import { CourseCard, hours } from '@/components/academy/course-card';
-import { clickConfig, paymeConfig } from '@/lib/payments';
+import { clickConfig, paymeConfig, siteUrl } from '@/lib/payments';
+import { JsonLd } from '@/components/json-ld';
+import { organizationLd } from '@/lib/seo';
+
+export async function generateMetadata() {
+  const s = await getSettings();
+  return { title: { absolute: `${s.centerName} Akademiya — AI va YouTube onlayn kurslari` } };
+}
 
 export default async function AcademyHome({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const sp = await searchParams;
@@ -23,8 +30,19 @@ export default async function AcademyHome({ searchParams }: { searchParams: Prom
   const payWays = [clickConfig() && 'Click', paymeConfig() && 'Payme', 'karta'].filter(Boolean).join(', ').replace(/, karta$/, ' yoki karta');
   const counts = { ai: courses.filter((c) => c.category === 'ai').length, youtube: courses.filter((c) => c.category === 'youtube').length };
 
+  const site = siteUrl();
+  const ld = [
+    await organizationLd(),
+    {
+      '@context': 'https://schema.org',
+      '@type': 'ItemList',
+      name: `${s.centerName} onlayn kurslari`,
+      itemListElement: courses.map((c, i) => ({ '@type': 'ListItem', position: i + 1, url: `${site}/akademiya/kurs/${c.slug}`, name: c.title })),
+    },
+  ];
   return (
     <>
+      <JsonLd data={ld} />
       <section className="bg-ink text-white">
         <div className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)] gap-10 px-4 py-14 sm:px-6 md:py-20 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:items-center">
           <div>

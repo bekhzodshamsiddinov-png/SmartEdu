@@ -8,13 +8,26 @@ import { getLearner } from '@/lib/learner';
 import { money } from '@/lib/format';
 import { hours } from '@/components/academy/course-card';
 import { BuyBox } from './buy-box';
+import type { Metadata } from 'next';
+import { JsonLd } from '@/components/json-ld';
+import { organizationLd, isoDuration } from '@/lib/seo';
+import { siteUrl } from '@/lib/payments';
 
 const KIND_ICON = { video: PlayCircle, matn: FileText, test: ListChecks, topshiriq: Wrench } as const;
 const LVL: Record<string, string> = { boshlangich: "Boshlang'ich", orta: "O'rta", yuqori: 'Yuqori' };
 
-export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const c = await courseBySlug((await params).slug);
-  return c ? { title: c.title, description: c.subtitle ?? undefined } : {};
+  if (!c || c.status === 'qoralama') return { robots: { index: false } };
+  const description = (c.subtitle || c.description || c.title).slice(0, 160);
+  const url = `/akademiya/kurs/${c.slug}`;
+  return {
+    title: c.title,
+    description,
+    alternates: { canonical: url },
+    openGraph: { type: 'website', title: c.title, description, url, ...(c.coverUrl?.startsWith('https://') ? { images: [{ url: c.coverUrl }] } : {}) },
+    twitter: { card: 'summary_large_image', title: c.title, description },
+  };
 }
 
 export default async function CoursePage({ params }: { params: Promise<{ slug: string }> }) {
@@ -27,6 +40,36 @@ export default async function CoursePage({ params }: { params: Promise<{ slug: s
     ? await db.execute<{ id: number }>(sql`select id from course_orders where learner_id = ${l.id} and course_id = ${c.id} and status = 'kutilmoqda' order by id desc limit 1`)
     : [];
   const lessons = mods.flatMap((m) => m.lessons);
+  const site = siteUrl();
+  const ld = [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'Course',
+      name: c.title,
+      description: (c.subtitle || c.description || c.title).slice(0, 500),
+      url: `${site}/akademiya/kurs/${c.slug}`,
+      inLanguage: 'uz',
+      ...(c.coverUrl?.startsWith('https://') ? { image: c.coverUrl } : {}),
+      provider: { '@id': `${site}/akademiya#org` },
+      educationalLevel: c.level === 'boshlangich' ? 'Beginner' : c.level,
+      offers: { '@type': 'Offer', price: c.price, priceCurrency: 'UZS', availability: 'https://schema.org/InStock', category: c.price ? 'Paid' : 'Free', url: `${site}/akademiya/kurs/${c.slug}` },
+      hasCourseInstance: {
+        '@type': 'CourseInstance',
+        courseMode: 'Online',
+        courseWorkload: isoDuration(lessons.reduce((a, x) => a + (x.durationMin ?? 0), 0)),
+      },
+      syllabusSections: mods.map((m) => ({ '@type': 'Syllabus', name: m.title, description: m.lessons.map((x) => x.title).join(', ').slice(0, 300) })),
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Akademiya', item: `${site}/akademiya` },
+        { '@type': 'ListItem', position: 2, name: c.title, item: `${site}/akademiya/kurs/${c.slug}` },
+      ],
+    },
+    await organizationLd(),
+  ];
   const minutes = lessons.reduce((a, x) => a + (x.durationMin ?? 0), 0);
   const free = lessons.filter((x) => x.isFree);
   const outcomes = (c.outcomes ?? '').split('\n').map((x) => x.trim()).filter(Boolean);
@@ -42,6 +85,8 @@ export default async function CoursePage({ params }: { params: Promise<{ slug: s
   ].filter(Boolean) as { i: typeof PlayCircle; t: string }[];
 
   return (
+    <>
+      <JsonLd data={ld} />
     <>
       <section className="text-white" style={{ background: `linear-gradient(180deg, #0F2A2E 0%, #0F2A2E 70%, ${c.color} 140%)` }}>
         <div className="mx-auto max-w-6xl px-4 pb-12 pt-10 sm:px-6 lg:pb-16 lg:pr-[420px]">
@@ -199,6 +244,7 @@ export default async function CoursePage({ params }: { params: Promise<{ slug: s
           </div>
         </aside>
       </div>
+    </>
     </>
   );
 }

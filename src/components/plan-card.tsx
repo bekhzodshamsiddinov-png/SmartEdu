@@ -33,7 +33,7 @@ export function PlanCard({ p, selected, onClick, compact }: { p: PlanLite; selec
           </span>
         )}
       </div>
-      <div className="mt-3 flex items-baseline gap-2">
+      <div className="mt-3 flex flex-wrap items-baseline gap-x-2">
         <span className={cn('font-extrabold tracking-[-0.03em] tnum', compact ? 'text-2xl' : 'text-[30px]')}>{money(p.price)}</span>
         {p.old_price && p.old_price > p.price && <span className="text-sm font-semibold text-fg-faint line-through tnum">{money(p.old_price)}</span>}
       </div>
