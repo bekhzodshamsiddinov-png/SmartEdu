@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { createHash } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { students } from '@/db/schema';
@@ -34,7 +35,8 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: true });
       }
       const r = await db.execute<{ full_name: string }>(sql`
-        update students set telegram_chat_id = ${chat}, telegram_link_code = null where telegram_link_code = ${code} returning full_name`);
+        update students set telegram_chat_id = ${chat}, telegram_link_code = null, telegram_link_expires = null
+        where telegram_link_code = ${createHash('sha256').update(code).digest('hex')} and telegram_link_expires > now() returning full_name`);
       await sendTelegram(
         chat,
         r.length

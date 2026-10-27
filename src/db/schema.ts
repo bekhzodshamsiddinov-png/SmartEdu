@@ -166,6 +166,7 @@ export const students = pgTable(
     telegramChatId: text('telegram_chat_id'),
     /** Telegram botga ulanish uchun bir martalik kod */
     telegramLinkCode: text('telegram_link_code'),
+    telegramLinkExpires: timestamp('telegram_link_expires', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('students_status_idx').on(t.status), uniqueIndex('students_cabinet_uq').on(t.cabinetHash), uniqueIndex('students_tglink_uq').on(t.telegramLinkCode)],
@@ -779,6 +780,7 @@ export const outbox = pgTable(
     error: text('error'),
     dedupeKey: text('dedupe_key'),
     attempts: integer('attempts').notNull().default(0),
+    sendingAt: timestamp('sending_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     sentAt: timestamp('sent_at', { withTimezone: true }),
   },

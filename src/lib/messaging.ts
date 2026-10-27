@@ -95,8 +95,12 @@ export async function sendTelegram(chat: string, text: string) {
  */
 export async function flushOutbox(limit = 30) {
   // Bir vaqtda ikki jarayon bir xabarni olmasligi uchun: avval "yuborilmoqda" deb band qilamiz
+  // Yuborish jarayoni uzilib qolgan xabarlar (10 daqiqadan ko'p) navbatga qaytadi, 3 urinishdan keyin — xato
+  await db.execute(sql`
+    update outbox set status = case when attempts >= 3 then 'xato' else 'navbatda' end, error = case when attempts >= 3 then 'Yuborish uzilib qoldi' else error end
+    where status = 'yuborilmoqda' and sending_at < now() - interval '10 minutes'`);
   const rows = await db.execute<{ id: number; channel: string; to: string; body: string }>(sql`
-    update outbox set status = 'yuborilmoqda', attempts = attempts + 1
+    update outbox set status = 'yuborilmoqda', attempts = attempts + 1, sending_at = now()
     where id in (select id from outbox where status = 'navbatda' order by id limit ${limit} for update skip locked)
     returning id, channel, "to", body`);
   for (const m of rows) {

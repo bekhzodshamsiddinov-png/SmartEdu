@@ -56,5 +56,5 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   // Har bir so'rov (prefetch ham) himoyadan o'tadi
-  matcher: ['/((?!_next/static|_next/image|favicon|icon|robots.txt|api/health|.*\\.(?:png|svg|jpg|ico|webmanifest)$).*)'],
+  matcher: ['/((?!_next/static/|_next/image|favicon\\.ico$|icon\\.svg$|robots\\.txt$|api/health$).*)'],
 };

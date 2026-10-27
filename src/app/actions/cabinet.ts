@@ -24,7 +24,8 @@ export async function createCabinetLink(studentId: number) {
     await assertBranch('student', studentId);
     const token = randomBytes(24).toString('base64url');
     const code = randomBytes(12).toString('base64url');
-    const r = await db.update(students).set({ cabinetHash: sha(token), telegramLinkCode: code }).where(eq(students.id, studentId)).returning({ n: students.fullName });
+    // Yangi havola — eski Telegram ulanishi ham uziladi; ulanish kodi 7 kun amal qiladi va faqat xeshi saqlanadi
+    const r = await db.update(students).set({ cabinetHash: sha(token), telegramLinkCode: sha(code), telegramLinkExpires: new Date(Date.now() + 7 * 864e5), telegramChatId: null }).where(eq(students.id, studentId)).returning({ n: students.fullName });
     if (!r.length) throw new Error("O'quvchi topilmadi.");
     await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: 'Ota-ona kabineti havolasi berildi', detail: r[0].n });
     const bot = await botInfo();
@@ -37,7 +38,7 @@ export async function revokeCabinetLink(studentId: number) {
     const u = await assertSection('students');
     if (!['rahbar', 'admin'].includes(u.role)) throw new Error('Kabinet havolasini rahbar yoki administrator boshqaradi.');
     await assertBranch('student', studentId);
-    await db.update(students).set({ cabinetHash: null, telegramLinkCode: null }).where(eq(students.id, studentId));
+    await db.update(students).set({ cabinetHash: null, telegramLinkCode: null, telegramLinkExpires: null, telegramChatId: null }).where(eq(students.id, studentId));
     await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: 'Ota-ona kabineti havolasi bekor qilindi', detail: String(studentId) });
     return { message: "Havola o'chirildi" };
   });

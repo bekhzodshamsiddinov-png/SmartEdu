@@ -18,6 +18,8 @@ export async function submitApplication(_: ApplyState, fd: FormData): Promise<Ap
     if (String(fd.get('website') ?? '')) return { ok: true }; // bot tuzog'i: odam bu maydonni ko'rmaydi
     const ip = await clientIp();
     if (await overLimit('ariza', ip, 5, 60)) return { error: "Juda ko'p ariza yuborildi. Birozdan keyin urinib ko'ring." };
+    // Umumiy chegara: ko'p IP dan hujum bo'lsa ham soatiga 100 tadan ortiq lid yaratilmaydi
+    if (await overLimit('ariza-all', '*', 100, 60)) return { error: "Hozir arizalar ko'p. Iltimos, bizga qo'ng'iroq qiling." };
     const name = String(fd.get('fullName') ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
     if (name.length < 2) return { error: 'Ismingizni yozing.' };
     const phone = normalizePhone(String(fd.get('phone') ?? ''));

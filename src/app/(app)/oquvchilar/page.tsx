@@ -93,7 +93,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
       ]);
       const b = balances.get(pid);
       profile = {
-        student: (({ cabinetHash, telegramChatId, telegramLinkCode, ...rest }) => ({ ...rest, createdAt: s.createdAt.toISOString(), cabinet: cabinetHash ? 1 : 0, telegram: telegramChatId ? 1 : 0 }))(s),
+        student: (({ cabinetHash, telegramChatId, telegramLinkCode: _c, telegramLinkExpires: _e, ...rest }) => ({ ...rest, createdAt: s.createdAt.toISOString(), cabinet: cabinetHash ? 1 : 0, telegram: telegramChatId ? 1 : 0 }))(s),
         enrollments: (byStudent.get(pid) ?? []).map((e) => ({ id: e.id, group: e.group, groupId: e.groupId, course: e.course, color: e.color, fee: showMoney ? e.fee : 0, startDate: e.startDate, endDate: e.endDate, active: e.active })),
         payments: showMoney ? pays.map(({ cancelledAt, ...x }) => ({ ...x, cancelled: !!cancelledAt })) : [],
         attendance: att,

@@ -78,6 +78,13 @@
       "when": 1793116508475,
       "tag": "0010_stage2_3",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793118646790,
+      "tag": "0011_hardening",
+      "breakpoints": true
     }
   ]
 }
