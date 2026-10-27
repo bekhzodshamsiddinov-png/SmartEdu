@@ -11,7 +11,7 @@ import { run, str, int } from '@/lib/action';
 import { today } from '@/lib/dates';
 import { assertBranch } from '@/lib/branch';
 import { students } from '@/db/schema';
-import { and, isNull } from 'drizzle-orm';
+import { and, isNull, sql } from 'drizzle-orm';
 import { cashboxForUser } from '@/lib/cashbox';
 import { audit } from '@/lib/security';
 import { notifyTelegram } from '@/lib/payments';
@@ -76,7 +76,7 @@ export async function cancelPayment(id: number, fd: FormData) {
     const reason = str(fd, 'reason');
     if (!reason || reason.length < 3) throw new Error('Bekor qilish sababini yozing.');
     const [p] = await db
-      .select({ amount: payments.amount, paidAt: payments.paidAt, method: payments.method, name: students.fullName, cancelled: payments.cancelledAt })
+      .select({ amount: payments.amount, paidAt: payments.paidAt, method: payments.method, name: students.fullName, cancelled: payments.cancelledAt, studentId: payments.studentId })
       .from(payments)
       .leftJoin(students, eq(students.id, payments.studentId))
       .where(eq(payments.id, id));
@@ -88,6 +88,8 @@ export async function cancelPayment(id: number, fd: FormData) {
       .where(and(eq(payments.id, id), isNull(payments.cancelledAt)))
       .returning({ id: payments.id });
     if (!done.length) throw new Error("To'lov allaqachon bekor qilingan.");
+    // O'z vaqtida to'lov uchun berilgan coin ham qaytariladi
+    await db.execute(sql`delete from coins where auto_key = ${`pay:${p.studentId}:${p.paidAt.slice(0, 7)}`}`);
     const d = `${p.name}: ${money(p.amount)} (${p.method}, ${p.paidAt}). Sabab: ${reason}`;
     await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: "To'lov bekor qilindi", detail: d });
     await notifyTelegram(`🗑 SmartEdu: to'lov bekor qilindi\n${d}\nKim: ${u.fullName}`);

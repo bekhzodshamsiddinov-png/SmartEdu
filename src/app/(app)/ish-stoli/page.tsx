@@ -81,7 +81,18 @@ export default async function DeskPage() {
       reportDone={myReport.length > 0}
       dueDay={base.dueDay}
       unfreeze={[...unfreeze]}
-      myBox={myBox ? { box: myBox, targets: allBoxes.filter((b) => b.active), pending: [...myPending] } : null}
+      myBox={
+        myBox
+          ? {
+              box: myBox,
+              // Boshqa kassalarning qoldig'i administratorga yuborilmaydi — faqat nomi
+              targets: allBoxes
+                .filter((b) => b.active && (b.id === myBox.id || !b.branchId || !user.branchId || b.branchId === user.branchId))
+                .map((b) => (b.id === myBox.id ? b : { ...b, byMethod: {}, total: 0, pendingIn: 0, owner: null })),
+              pending: [...myPending],
+            }
+          : null
+      }
       me={{ id: user.id, role: user.role }}
     />
   );

@@ -1,6 +1,6 @@
 'use server';
 import { createHash, randomBytes } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { coins, students } from '@/db/schema';
 import { assertSection } from '@/lib/auth';
@@ -55,6 +55,9 @@ export async function giveCoins(studentId: number, fd: FormData) {
     if (!amount || Math.abs(amount) > 100) throw new Error("Coin -100 dan 100 gacha bo'lsin.");
     const reason = str(fd, 'reason')?.slice(0, 120);
     if (!reason) throw new Error('Sababini yozing.');
+    // Kuniga bitta xodim jami 300 coindan ortiq bera olmaydi (tasodifiy yoki ataylab ko'p berilmasin)
+    const [g] = await db.execute<{ s: number }>(sql`select coalesce(sum(abs(amount)), 0)::int s from coins where created_by_id = ${u.id} and created_at > now() - interval '1 day'`);
+    if ((g?.s ?? 0) + Math.abs(amount) > 300) throw new Error("Bugun juda ko'p coin berildi. Ertaga davom eting.");
     await db.insert(coins).values({ studentId, amount, reason, createdById: u.id });
     return { message: amount > 0 ? `${amount} coin berildi` : `${-amount} coin olindi` };
   });

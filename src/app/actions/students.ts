@@ -219,8 +219,10 @@ export async function updateFee(enrollmentId: number, fd: FormData) {
     await assertBranch('enrollment', enrollmentId);
     const fee = int(fd, 'monthlyFee');
     if (fee === null || fee < 0) throw new Error("Oylik to'lovni kiriting.");
+    const [old] = await db.select({ f: enrollments.monthlyFee }).from(enrollments).where(eq(enrollments.id, enrollmentId));
+    if (!old) throw new Error('Yozuv topilmadi.');
     await db.update(enrollments).set({ monthlyFee: fee }).where(eq(enrollments.id, enrollmentId));
-    await syncCurrentMonthFee(enrollmentId, fee);
+    await syncCurrentMonthFee(enrollmentId, fee, old.f);
     return { message: "Oylik to'lov yangilandi" };
   });
 }

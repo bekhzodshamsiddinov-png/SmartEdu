@@ -11,8 +11,16 @@ import { audit } from '@/lib/security';
 import { notifyTelegram } from '@/lib/payments';
 import { money } from '@/lib/format';
 import { cashboxes } from '@/db/schema';
-import { mainCashbox } from '@/lib/cashbox';
-import { and } from 'drizzle-orm';
+import { boxInBranch, lockAndCheck, mainCashbox } from '@/lib/cashbox';
+import { lockedBranch } from '@/lib/branch';
+import { and, sql } from 'drizzle-orm';
+
+/** Oylik yoki avans bilan bog'langan yozuvni bu yerdan o'zgartirib bo'lmaydi — aks holda hisob buziladi */
+async function assertNotPayroll(id: number) {
+  const [r] = await db.execute<{ c: number }>(sql`
+    select ((select count(*) from salary_payouts where transaction_id = ${id}) + (select count(*) from staff_adjustments where transaction_id = ${id}))::int c`);
+  if (r?.c) throw new Error("Bu yozuv oylik yoki avans bilan bog'langan. Uni Moliya → Oylik bo'limidan boshqaring.");
+}
 
 export async function saveTransaction(id: number | null, fd: FormData) {
   return run(async () => {
@@ -25,9 +33,14 @@ export async function saveTransaction(id: number | null, fd: FormData) {
     if (type !== 'kirim' && type !== 'chiqim') throw new Error("Turi noto'g'ri.");
     const date = str(fd, 'date') || today();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("Sana noto'g'ri.");
-    const boxId = int(fd, 'cashboxId');
+    const [old] = id ? await db.select().from(transactions).where(eq(transactions.id, id)) : [];
+    if (id && !old) throw new Error('Yozuv topilmadi.');
+    if (id) await assertNotPayroll(id);
+    // Tahrirlashda kassa maydoni bo'lmasa — eski kassa saqlanadi
+    const boxId = int(fd, 'cashboxId') ?? old?.cashboxId ?? null;
     const box = boxId ? (await db.select().from(cashboxes).where(and(eq(cashboxes.id, boxId), eq(cashboxes.active, true))))[0] : await mainCashbox();
     if (!box) throw new Error('Kassa topilmadi.');
+    if (!boxInBranch(box, await lockedBranch())) throw new Error('Bu kassa boshqa filialga tegishli.');
     const v = {
       type,
       cashboxId: box.id,
@@ -46,15 +59,23 @@ export async function saveTransaction(id: number | null, fd: FormData) {
     }
     const label = (t: { type: string; category: string; amount: number; date: string }) => `${t.type === 'kirim' ? 'Kirim' : 'Xarajat'} «${t.category}» ${money(t.amount)}, ${t.date}`;
     if (id) {
-      const [old] = await db.select().from(transactions).where(eq(transactions.id, id));
-      if (!old) throw new Error('Yozuv topilmadi.');
       // Muallif o'zgarmaydi — kim kiritgani saqlanib qoladi
-      await db.update(transactions).set({ ...v, createdById: old.createdById ?? u.id }).where(eq(transactions.id, id));
+      await db.transaction(async (tx) => {
+        if (type === 'chiqim') {
+          // Eski yozuv shu kassadan shu usulda chiqim bo'lsa, uning summasi qoldiqqa qaytarib hisoblanadi
+          const credit = old.type === 'chiqim' && old.cashboxId === box.id && old.method === v.method ? old.amount : 0;
+          await lockAndCheck(tx, box.id, v.method, amount, { credit });
+        }
+        await tx.update(transactions).set({ ...v, createdById: old.createdById ?? u.id }).where(eq(transactions.id, id));
+      });
       const changed = old.amount !== amount || old.type !== type || old.date !== v.date || old.category !== v.category;
       await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: 'Moliya yozuvi tahrirlandi', detail: changed ? `${label(old)} → ${label(v)}` : label(v) });
       if (old.amount !== amount) await notifyTelegram(`✏️ SmartEdu: moliya yozuvi summasi o'zgartirildi\n${label(old)} → ${money(amount)}\nKim: ${u.fullName}`);
     } else {
-      await db.insert(transactions).values(v);
+      await db.transaction(async (tx) => {
+        if (type === 'chiqim') await lockAndCheck(tx, box.id, v.method, amount);
+        await tx.insert(transactions).values(v);
+      });
       await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: 'Moliya yozuvi kiritildi', detail: label(v) });
     }
     return { message: type === 'kirim' ? 'Kirim kiritildi' : 'Xarajat kiritildi' };
@@ -67,6 +88,7 @@ export async function deleteTransaction(id: number) {
     if (u.role !== 'rahbar') throw new Error("Yozuvni faqat rahbar o'chiradi.");
     const [old] = await db.select().from(transactions).where(eq(transactions.id, id));
     if (!old) throw new Error('Yozuv topilmadi.');
+    await assertNotPayroll(id);
     await db.delete(transactions).where(eq(transactions.id, id));
     const d = `${old.type === 'kirim' ? 'Kirim' : 'Xarajat'} «${old.category}» ${money(old.amount)}, ${old.date}`;
     await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: "Moliya yozuvi o'chirildi", detail: d });

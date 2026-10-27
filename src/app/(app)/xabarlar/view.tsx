@@ -115,7 +115,7 @@ export function MessagesView({ rows, counts, status, events, templates, channels
                     )}
                   </div>
                   <p className="mt-1.5 text-sm">{r.body}</p>
-                  {r.error && <p className="mt-1 text-xs text-bad">{r.error}</p>}
+                  {r.error && <p className={cn('mt-1 text-xs', r.status === 'xato' ? 'text-bad' : 'text-fg-muted')}>{r.error}</p>}
                   {['qolda', 'xato', 'navbatda'].includes(r.status) && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       <Button size="sm" variant="ghost" onClick={() => copy(r.body)}>

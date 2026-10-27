@@ -4,7 +4,8 @@ import { db } from '@/db';
 import { cashboxes, cashTransfers, users } from '@/db/schema';
 import { assertSection, getCurrentUser } from '@/lib/auth';
 import { run, str, req, int } from '@/lib/action';
-import { CASH_METHODS } from '@/lib/cashbox';
+import { CASH_METHODS, boxInBranch, lockAndCheck } from '@/lib/cashbox';
+import { lockedBranch } from '@/lib/branch';
 import { audit } from '@/lib/security';
 import { notifyTelegram } from '@/lib/payments';
 import { money } from '@/lib/format';
@@ -65,20 +66,12 @@ export async function createTransfer(fd: FormData) {
     const to = boxes.find((b) => b.id === toId);
     if (!from || !to || !from.active || !to.active) throw new Error('Kassa topilmadi.');
     if (!isFinance(u.role) && from.ownerId !== u.id) throw new Error("Faqat o'z kassangizdan pul o'tkaza olasiz.");
+    const locked = await lockedBranch();
+    if (!boxInBranch(from, locked) || !boxInBranch(to, locked)) throw new Error('Bu kassa boshqa filialga tegishli.');
     const auto = u.role === 'rahbar';
     const note = str(fd, 'note')?.slice(0, 200) ?? null;
     await db.transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(7701, ${fromId})`);
-      const [b] = await tx.execute<{ s: string }>(sql`
-        select coalesce(sum(s), 0)::bigint s from (
-          select amount s from payments where cancelled_at is null and method::text = ${method}
-            and coalesce(cashbox_id, (select id from cashboxes where is_main order by id limit 1)) = ${fromId}
-          union all select case when type = 'kirim' then amount else -amount end from transactions where method = ${method}
-            and coalesce(cashbox_id, (select id from cashboxes where is_main order by id limit 1)) = ${fromId}
-          union all select amount from cash_transfers where to_id = ${fromId} and method = ${method} and status = 'tasdiqlandi'
-          union all select -amount from cash_transfers where from_id = ${fromId} and method = ${method} and status in ('tasdiqlandi','kutilmoqda')
-        ) f`);
-      if (Number(b.s) < amount) throw new Error(`Kassada yetarli mablag' yo'q: ${money(Number(b.s))}.`);
+      await lockAndCheck(tx, fromId, method, amount, { all: true });
       await tx.insert(cashTransfers).values({
         fromId,
         toId,
@@ -106,7 +99,8 @@ export async function decideTransfer(id: number, accept: boolean) {
     if (!t) throw new Error("O'tkazma topilmadi.");
     const [to] = await db.select().from(cashboxes).where(eq(cashboxes.id, t.toId));
     const [from] = await db.select().from(cashboxes).where(eq(cashboxes.id, t.fromId));
-    const mayDecide = u.role === 'rahbar' || (to?.ownerId ? to.ownerId === u.id : u.role === 'bugalter');
+    const locked = await lockedBranch();
+    const mayDecide = u.role === 'rahbar' || (to?.ownerId ? to.ownerId === u.id : u.role === 'bugalter' && !!to && boxInBranch(to, locked));
     if (!mayDecide) throw new Error("Bu o'tkazmani qabul qiluvchi tasdiqlaydi.");
     if (accept && t.createdById === u.id && u.role !== 'rahbar') throw new Error("O'zingiz yuborgan o'tkazmani o'zingiz tasdiqlay olmaysiz.");
     const r = await db

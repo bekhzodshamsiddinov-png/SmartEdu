@@ -1,12 +1,12 @@
 'use server';
-import { ensureMonthlyCharges, syncLessonCharges } from '@/lib/billing';
+import { ensureMonthlyCharges, lessonsInMonth, syncLessonCharges } from '@/lib/billing';
 import { eq, and, isNull, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { charges } from '@/db/schema';
 import { groups, courses, enrollments, students } from '@/db/schema';
 import { assertSection } from '@/lib/auth';
 import { run, str, req, int, bool } from '@/lib/action';
-import { DAY_CODES } from '@/lib/dates';
+import { DAY_CODES, addDays, groupHasLessonOn } from '@/lib/dates';
 import { scheduleConflict } from '@/lib/schedule';
 import { assertBranch, assertStaffFor, resolveBranch } from '@/lib/branch';
 
@@ -110,10 +110,23 @@ export async function moveStudent(enrollmentId: number, fd: FormData) {
     // Shu oy avvalgi guruhda allaqachon hisoblangan bo'lsa, yangi guruhda ikkinchi marta yechilmaydi
     const [already] = await db.execute<{ c: number }>(sql`select count(*)::int c from charges where enrollment_id = ${enrollmentId} and kind = 'oylik' and month = ${d.slice(0, 7)}`);
     if (already.c) {
-      await db
-        .insert(charges)
-        .values({ studentId: e.studentId, enrollmentId: ne.id, groupId, kind: 'oylik', amount: 0, date: d, month: d.slice(0, 7), note: "Ko'chirildi: bu oy avvalgi guruhda hisoblangan", createdById: u.id })
-        .onConflictDoNothing();
+      const [ng] = await db.select({ billing: groups.billing }).from(groups).where(eq(groups.id, groupId));
+      if (ng?.billing === 'dars') {
+        // Yangi guruhda har dars uchun yechiladi — eski guruhdagi oylik to'lovning qolgan darslarga to'g'ri keladigan qismi qaytariladi
+        const [og] = await db.select({ days: groups.days }).from(groups).where(eq(groups.id, e.groupId));
+        const month = d.slice(0, 7);
+        const total = lessonsInMonth(og.days, month);
+        let left = 0;
+        for (let x = d; x.slice(0, 7) === month; x = addDays(x, 1)) if (groupHasLessonOn(og.days, x)) left++;
+        const refund = total ? Math.round((e.monthlyFee * left) / total) : 0;
+        if (refund > 0)
+          await db.insert(charges).values({ studentId: e.studentId, enrollmentId: e.id, groupId: e.groupId, kind: 'tuzatish', amount: -refund, date: d, month, note: `Ko'chirildi: qolgan ${left} dars uchun qaytarildi`, createdById: u.id });
+      } else {
+        await db
+          .insert(charges)
+          .values({ studentId: e.studentId, enrollmentId: ne.id, groupId, kind: 'oylik', amount: 0, date: d, month: d.slice(0, 7), note: "Ko'chirildi: bu oy avvalgi guruhda hisoblangan", createdById: u.id })
+          .onConflictDoNothing();
+      }
     }
     await ensureMonthlyCharges(true);
     const [g] = await db.select({ b: groups.branchId }).from(groups).where(eq(groups.id, groupId));

@@ -123,7 +123,7 @@ export function PayrollTab({ month, rows, boxes, salaryDay }: { month: string; r
                                 <span className="font-bold tnum">{money(a.amount)}</span>
                                 <span className="min-w-0 flex-1 truncate text-fg-muted">{a.note}</span>
                                 {!r.paid && (
-                                  <ActionButton variant="ghost" size="icon" action={() => deleteAdjustment(a.id)} confirm={a.kind === 'avans' ? "Avans o'chirilsa, kassadagi chiqim ham o'chadi. Davom etasizmi?" : "O'chirilsinmi?"} title="O'chirish">
+                                  <ActionButton variant="ghost" size="icon" action={() => deleteAdjustment(a.id)} confirm={a.kind === 'avans' ? "Avans bekor qilinsa, pul kassaga qaytgani kirim sifatida yoziladi. Davom etasizmi?" : "O'chirilsinmi?"} title="O'chirish">
                                     <Trash2 className="h-4 w-4" />
                                   </ActionButton>
                                 )}

@@ -29,9 +29,10 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
       ? db.execute<{ id: number; from_id: number; to_id: number; from: string; to: string; method: string; amount: number; status: string; note: string | null; by: string | null; created_by_id: number | null; at: string }>(sql`
           select t.id, t.from_id, t.to_id, f.name "from", c.name "to", t.method, t.amount, t.status, t.note, u.full_name by, t.created_by_id, (t.created_at at time zone 'Asia/Tashkent')::date::text at
           from cash_transfers t join cashboxes f on f.id = t.from_id join cashboxes c on c.id = t.to_id left join users u on u.id = t.created_by_id
+          ${user.branchId ? sql`where (f.branch_id is null or f.branch_id = ${user.branchId}) and (c.branch_id is null or c.branch_id = ${user.branchId})` : sql``}
           order by (t.status = 'kutilmoqda') desc, t.id desc limit 50`)
       : Promise.resolve([]),
-    tab === 'kassalar' ? db.select({ id: users.id, name: users.fullName }).from(users).where(eq(users.active, true)).orderBy(users.fullName) : Promise.resolve([]),
+    tab === 'kassalar' ? db.select({ id: users.id, name: users.fullName }).from(users).where(user.branchId ? sql`${users.active} and (${users.branchId} is null or ${users.branchId} = ${user.branchId})` : eq(users.active, true)).orderBy(users.fullName) : Promise.resolve([]),
     tab === 'oylik' ? payroll(month, B) : Promise.resolve([]),
   ]);
   const [tx, ie, rec, byCourse, byCat, series, s, payMethods] = await Promise.all([

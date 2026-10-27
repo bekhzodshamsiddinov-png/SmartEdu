@@ -35,20 +35,20 @@ async function scopeIds(ids: number[]) {
 /** Qo'lda yuborilgan xabarni "yuborildi" deb belgilash */
 export async function markSent(id: number) {
   return run(async () => {
-    await assertSection('messages');
+    const u = await assertSection('messages');
     const [ok] = await scopeIds([id]);
     if (!ok) throw new Error('Xabar topilmadi.');
-    await db.update(outbox).set({ status: 'yuborildi', sentAt: new Date() }).where(and(eq(outbox.id, ok), inArray(outbox.status, ['qolda', 'xato', 'navbatda'])));
+    await db.update(outbox).set({ status: 'yuborildi', sentAt: new Date(), error: `Qo'lda: ${u.fullName}` }).where(and(eq(outbox.id, ok), inArray(outbox.status, ['qolda', 'xato', 'navbatda'])));
     return { message: 'Yuborildi deb belgilandi' };
   });
 }
 
 export async function cancelMessage(id: number) {
   return run(async () => {
-    await assertSection('messages');
+    const u = await assertSection('messages');
     const [ok] = await scopeIds([id]);
     if (!ok) throw new Error('Xabar topilmadi.');
-    await db.update(outbox).set({ status: 'bekor' }).where(and(eq(outbox.id, ok), inArray(outbox.status, ['qolda', 'xato', 'navbatda'])));
+    await db.update(outbox).set({ status: 'bekor', error: `Bekor qildi: ${u.fullName}` }).where(and(eq(outbox.id, ok), inArray(outbox.status, ['qolda', 'xato', 'navbatda'])));
     return { message: 'Bekor qilindi' };
   });
 }

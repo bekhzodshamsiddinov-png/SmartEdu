@@ -59,7 +59,8 @@ export async function ensureMonthlyCharges(force = false) {
       from enrollments e join groups g on g.id = e.group_id
       cross join lateral generate_series(date_trunc('month', e.start_date), date_trunc('month', least(coalesce(e.end_date, ${t}::date), ${t}::date)), interval '1 month') m(d)
       where g.billing = 'oylik' and e.start_date <= ${t}::date
-        and not exists (select 1 from charges c where c.enrollment_id = e.id and c.kind = 'oylik' and c.month = to_char(m.d, 'YYYY-MM'))`);
+        and not exists (select 1 from charges c where c.enrollment_id = e.id and c.kind = 'oylik' and c.month = to_char(m.d, 'YYYY-MM'))
+        and not exists (select 1 from charges c where c.student_id = e.student_id and c.group_id = e.group_id and c.enrollment_id <> e.id and c.kind = 'oylik' and c.month = to_char(m.d, 'YYYY-MM'))`);
     for (const r of missing) {
       const first = r.m === r.start_date.slice(0, 7);
       const amount = first ? firstMonthAmount(r.monthly_fee, r.days, r.start_date) : r.monthly_fee;
@@ -76,6 +77,8 @@ export async function ensureMonthlyCharges(force = false) {
     from enrollments e join groups g on g.id = e.group_id
     cross join lateral generate_series(date_trunc('month', e.start_date), date_trunc('month', least(coalesce(e.end_date, ${t}::date), ${t}::date)), interval '1 month') m(d)
     where g.billing = 'oylik' and e.start_date <= ${t}::date
+      -- Shu oy shu guruhda avval hisoblangan bo'lsa (muzlatib qaytgan, qayta yozilgan) — ikkinchi marta yechilmaydi
+      and not exists (select 1 from charges c where c.student_id = e.student_id and c.group_id = e.group_id and c.enrollment_id <> e.id and c.kind = 'oylik' and c.month = to_char(m.d, 'YYYY-MM'))
     on conflict do nothing`);
 }
 
@@ -120,8 +123,14 @@ export async function syncLessonCharges(groupId: number, date: string, byUserId?
 }
 
 /** Oylik narx o'zgarsa — joriy oyning oylik yechimi ham yangilanadi (o'tgan oylar o'zgarmaydi) */
-export async function syncCurrentMonthFee(enrollmentId: number, fee: number) {
-  await db.execute(sql`update charges set amount = ${fee} where enrollment_id = ${enrollmentId} and kind = 'oylik' and month = ${today().slice(0, 7)}`);
+/**
+ * Narx o'zgarganda joriy oyning oylik yechimi yangilanadi. Faqat oddiy (to'liq) yechim o'zgaradi:
+ * ko'chirilganda qo'yilgan 0 yozuv (izohli) va qisman hisoblangan birinchi oy o'zgarmaydi.
+ */
+export async function syncCurrentMonthFee(enrollmentId: number, fee: number, oldFee: number) {
+  await db.execute(sql`
+    update charges set amount = ${fee}
+    where enrollment_id = ${enrollmentId} and kind = 'oylik' and month = ${today().slice(0, 7)} and note is null and amount = ${oldFee}`);
 }
 
 export async function enrollmentById(id: number) {

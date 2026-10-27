@@ -2,6 +2,7 @@ import 'server-only';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { cashboxes } from '@/db/schema';
+import { money } from './format';
 
 export const CASH_METHODS = ['naqd', 'karta', 'click', 'payme', 'bank'] as const;
 export type CashMethod = (typeof CASH_METHODS)[number];
@@ -60,4 +61,37 @@ export async function cashboxBalances(): Promise<CashboxBalance[]> {
 export async function cashboxBalance(id: number, method: string) {
   const all = await cashboxBalances();
   return all.find((c) => c.id === id)?.byMethod[method] ?? 0;
+}
+
+type Exec = Pick<typeof db, 'execute'>;
+
+/** Bitta kassaning bitta usul bo'yicha qoldig'i (tranzaksiya ichida ham ishlaydi) */
+export async function boxMethodBalance(exec: Exec, boxId: number, method: string) {
+  const [b] = await exec.execute<{ s: string }>(sql`
+    select coalesce(sum(s), 0)::bigint s from (
+      select amount s from payments where cancelled_at is null and method::text = ${method}
+        and coalesce(cashbox_id, (select id from cashboxes where is_main order by id limit 1)) = ${boxId}
+      union all select case when type = 'kirim' then amount else -amount end from transactions where method = ${method}
+        and coalesce(cashbox_id, (select id from cashboxes where is_main order by id limit 1)) = ${boxId}
+      union all select amount from cash_transfers where to_id = ${boxId} and method = ${method} and status = 'tasdiqlandi'
+      union all select -amount from cash_transfers where from_id = ${boxId} and method = ${method} and status in ('tasdiqlandi','kutilmoqda')
+    ) f`);
+  return Number(b.s);
+}
+
+/**
+ * Kassadan pul chiqishidan oldin: kassani qulflab (parallel so'rovlar navbatga turadi), qoldiqni tekshiradi.
+ * Naqd pul — jismoniy pul, u manfiyga tushmasligi shart. Bank/karta hisoblari tarixi to'liq bo'lmasligi mumkin,
+ * shuning uchun ular faqat qulflanadi. `force` — o'tkazmalar uchun barcha usullarda tekshirish.
+ */
+export async function lockAndCheck(tx: Exec, boxId: number, method: string, amount: number, opts: { all?: boolean; credit?: number } = {}) {
+  await tx.execute(sql`select pg_advisory_xact_lock(7701, ${boxId})`);
+  if (method !== 'naqd' && !opts.all) return;
+  const bal = (await boxMethodBalance(tx, boxId, method)) + (opts.credit ?? 0);
+  if (bal < amount) throw new Error(`Kassada yetarli mablag' yo'q: ${money(Math.max(0, bal))}.`);
+}
+
+/** Filialga biriktirilgan xodim faqat o'z filiali (yoki filialsiz) kassasi bilan ishlaydi */
+export function boxInBranch(box: { branchId: number | null }, locked: number | null) {
+  return !locked || !box.branchId || box.branchId === locked;
 }
