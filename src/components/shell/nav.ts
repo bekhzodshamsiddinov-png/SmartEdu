@@ -12,6 +12,7 @@ export const NAV: NavItem[] = [
   { href: '/jadval', label: 'Dars jadvali', section: 'schedule', icon: 'schedule' },
   { href: '/davomat', label: 'Davomat', section: 'attendance', icon: 'check' },
   { href: '/tolovlar', label: "To'lovlar", section: 'payments', icon: 'wallet' },
+  { href: '/abonementlar', label: 'Abonementlar', section: 'subscriptions', icon: 'ticket' },
   { href: '/moliya', label: 'Moliya', section: 'finance', icon: 'bank' },
   { href: '/xodimlar', label: 'Xodimlar', section: 'staff', icon: 'brief' },
   { href: '/vazifalar', label: 'Vazifalar', section: 'tasks', icon: 'tasks' },

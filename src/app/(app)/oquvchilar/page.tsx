@@ -74,7 +74,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
   if (pid) {
     const s = all.find((x) => x.id === pid);
     if (s && rows.some((r) => r.id === pid)) {
-      const [pays, att, grd, nts, res, attStat, led, frz, cn] = await Promise.all([
+      const [pays, att, grd, nts, res, attStat, led, frz, cn, subs, plans] = await Promise.all([
         db.select({ id: payments.id, amount: payments.amount, method: payments.method, paidAt: payments.paidAt, forMonth: payments.forMonth, note: payments.note, by: users.fullName, cancelledAt: payments.cancelledAt, cancelReason: payments.cancelReason }).from(payments).leftJoin(users, eq(users.id, payments.receivedById)).where(eq(payments.studentId, pid)).orderBy(desc(payments.paidAt), desc(payments.id)),
         db.select({ id: attendance.id, date: attendance.date, status: attendance.status, reason: attendance.reason, group: groups.name }).from(attendance).innerJoin(groups, eq(groups.id, attendance.groupId)).where(eq(attendance.studentId, pid)).orderBy(desc(attendance.date)).limit(60),
         db.select({ id: grades.id, period: grades.period, score: grades.score, comment: grades.comment, by: users.fullName }).from(grades).leftJoin(users, eq(users.id, grades.teacherId)).where(eq(grades.studentId, pid)).orderBy(desc(grades.period), desc(grades.id)),
@@ -90,6 +90,14 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
         db.execute<{ amount: number; reason: string; d: string; by: string | null; total: number }>(sql`
           select c.amount, c.reason, (c.created_at at time zone 'Asia/Tashkent')::date::text d, u.full_name by, sum(c.amount) over ()::int total
           from coins c left join users u on u.id = c.created_by_id where c.student_id = ${pid} order by c.id desc limit 10`),
+        db.execute<{ id: number; name: string; kind: string; start_date: string; end_date: string; lessons_total: number; used: number; price: number; status: string; grp: string }>(sql`
+          select ss.id, ss.name, ss.kind, ss.start_date::text, ss.end_date::text, ss.lessons_total, ss.price, ss.status, g.name grp,
+            (select count(*) from charges c where c.subscription_id = ss.id and c.kind = 'abonement_dars')::int used
+          from student_subscriptions ss join enrollments e on e.id = ss.enrollment_id join groups g on g.id = e.group_id
+          where ss.student_id = ${pid} order by ss.end_date desc limit 10`),
+        db.execute<{ id: number; name: string; kind: string; months: number; lessons: number; valid_days: number; price: number; old_price: number | null; description: string | null; color: string; popular: boolean; course: string | null; course_id: number | null }>(sql`
+          select p.id, p.name, p.kind, p.months, p.lessons, p.valid_days, p.price, p.old_price, p.description, p.color, p.popular, c.name course, p.course_id
+          from subscription_plans p left join courses c on c.id = p.course_id where p.active order by p.position, p.price`),
       ]);
       const b = balances.get(pid);
       profile = {
@@ -103,6 +111,8 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
         balance: showMoney ? { charged: b?.charged ?? 0, paid: b?.paid ?? 0, balance: b?.balance ?? 0, fee: b?.monthlyFee ?? 0 } : { charged: 0, paid: 0, balance: 0, fee: 0 },
         ledger: showMoney ? led.map((r) => ({ ...r, amount: Number(r.amount) })) : [],
         freezeReasons: frz.map((r) => r.title),
+        subscriptions: [...subs],
+        plans: [...plans],
         coins: { total: cn[0]?.total ?? 0, rows: cn.map(({ total: _t, ...r }) => r) },
         attRate: attStat[0].total ? Math.round((attStat[0].present / attStat[0].total) * 100) : null,
       };

@@ -10,6 +10,7 @@ import { addDays, today, fmtDate } from '@/lib/dates';
 import { after } from 'next/server';
 import { syncAttendanceCoins } from '@/lib/coins';
 import { enqueue, flushOutbox } from '@/lib/messaging';
+import { verifyQrToken } from '@/lib/qr';
 
 type Mark = { studentId: number; status: 'keldi' | 'kelmadi' | 'kechikdi' | 'sababli'; reason?: string | null; reasonId?: number | null };
 
@@ -140,4 +141,45 @@ export async function setArrival(groupId: number, date: string, status: 'vaqtida
       .onConflictDoUpdate({ target: [lessons.groupId, lessons.date], set: { teacherStatus: status, arrivalChecked: true } });
     return { message: status === 'vaqtida' ? "O'qituvchi vaqtida keldi" : status === 'kechikdi' ? 'Kechikish qayd etildi' : "Dars o'tilmadi deb qayd etildi" };
   });
+}
+
+/**
+ * QR orqali davomat: o'qituvchi telefoni kamerasi bilan o'quvchi ilovasidagi kodni skanerlaydi.
+ * Faqat bugungi kun, faqat shu guruhda o'qiyotgan o'quvchi; dars boshlanishidan 10 daqiqa o'tib kelsa — "kechikdi".
+ */
+export async function scanAttendanceQr(groupId: number, token: string) {
+  try {
+    const u = await assertSection('attendance');
+    await assertBranch('group', groupId);
+    await assertOwnGroup(u, groupId);
+    if (typeof token !== 'string' || token.length > 120) return { ok: false as const, error: "Kod noto'g'ri." };
+    const sid = await verifyQrToken(token);
+    if (!sid) return { ok: false as const, error: "Kod yaroqsiz yoki eskirgan. O'quvchi ilovani yangilasin." };
+    const t = today();
+    const [g] = await db.select().from(groups).where(eq(groups.id, groupId));
+    if (!g) return { ok: false as const, error: 'Guruh topilmadi.' };
+    const [st] = await db.execute<{ name: string }>(sql`
+      select s.full_name name from enrollments e join students s on s.id = e.student_id
+      where e.group_id = ${groupId} and e.student_id = ${sid} and e.start_date <= ${t} and (e.end_date is null or e.end_date >= ${t})`);
+    if (!st) return { ok: false as const, error: "Bu o'quvchi shu guruhda o'qimaydi." };
+    const now = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tashkent', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
+    const [h, m] = g.startTime.split(':').map(Number);
+    const late = now > `${String(h + Math.floor((m + 10) / 60)).padStart(2, '0')}:${String((m + 10) % 60).padStart(2, '0')}`;
+    const [prev] = await db.select({ status: attendance.status }).from(attendance).where(and(eq(attendance.groupId, groupId), eq(attendance.studentId, sid), eq(attendance.date, t)));
+    if (prev && (prev.status === 'keldi' || prev.status === 'kechikdi')) return { ok: true as const, id: sid, name: st.name, status: prev.status, already: true };
+    const status = late ? 'kechikdi' : 'keldi';
+    await db
+      .insert(attendance)
+      .values({ groupId, studentId: sid, date: t, status, markedById: u.id, reason: 'QR' })
+      .onConflictDoUpdate({ target: [attendance.groupId, attendance.studentId, attendance.date], set: { status, reasonId: null, reason: 'QR', markedById: u.id } });
+    await db.insert(lessons).values({ groupId, date: t, markedById: u.id }).onConflictDoNothing();
+    await syncLessonCharges(groupId, t, u.id);
+    await syncAttendanceCoins(groupId, t);
+    await db.execute(sql`update students set status = 'faol' where status = 'xavf' and id = ${sid}`);
+    return { ok: true as const, id: sid, name: st.name, status, already: false };
+  } catch (e) {
+    const msg = (e as Error)?.message ?? '';
+    const internal = !msg || msg.length > 150 || /Failed query|violates|constraint|relation |column |syntax|postgres|ECONN|timeout|invalid input/i.test(msg);
+    return { ok: false as const, error: internal ? "Xatolik yuz berdi. Qayta urinib ko'ring." : msg };
+  }
 }

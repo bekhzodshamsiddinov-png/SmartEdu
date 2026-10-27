@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { Search, UserPlus, Users, Wallet, Pencil, ArrowRightLeft, Phone, Plus, Trash2, Download, LogOut as LeaveIcon, Receipt, Link2, FileText, Award, Coins, Copy } from 'lucide-react';
+import { Search, UserPlus, Users, Wallet, Pencil, ArrowRightLeft, Phone, Plus, Trash2, Download, LogOut as LeaveIcon, Receipt, Link2, FileText, Award, Coins, Copy, Ticket } from 'lucide-react';
 import type { Role } from '@/db/schema';
 import { Avatar, Badge, Button, Card, Empty, Field, PageHeader, cn } from '@/components/ui';
 import { Drawer, Modal } from '@/components/modal';
@@ -12,6 +12,8 @@ import { addGrade, addNote, addResult, deleteStudent, endEnrollment, enroll, upd
 import { CancelPaymentButton } from '@/components/cancel-payment';
 import { createCabinetLink, giveCoins, revokeCabinetLink } from '@/app/actions/cabinet';
 import { useToast } from '@/components/toast';
+import { PlanCard, type PlanLite } from '@/components/plan-card';
+import { sellSubscription } from '@/app/actions/subscriptions';
 import { ATT_LABEL, NOTE_KINDS, PAY_METHOD_LABEL, RESULT_TYPES, RETURN_RESULTS, STUDENT_STATUS } from '@/lib/constants';
 import { money, phone } from '@/lib/format';
 import { fmtDate, fmtMonth, fmtShort, relative, today } from '@/lib/dates';
@@ -42,6 +44,8 @@ export type Profile = {
   attRate: number | null;
   ledger: { id: number; date: string; kind: string; amount: number; note: string | null; grp: string | null; status: string | null }[];
   freezeReasons: string[];
+  subscriptions: { id: number; name: string; kind: string; start_date: string; end_date: string; lessons_total: number; used: number; price: number; status: string; grp: string }[];
+  plans: (PlanLite & { course_id: number | null })[];
   coins: { total: number; rows: { amount: number; reason: string; d: string; by: string | null }[] };
 };
 
@@ -368,7 +372,7 @@ function Ledger({ p }: { p: Profile }) {
 function ProfileDrawer({ p, groups, role, showMoney, onClose }: { p: Profile; groups: GroupOpt[]; role: Role; showMoney: boolean; onClose: () => void }) {
   const s = p.student;
   const [tab, setTab] = useState('umumiy');
-  const [modal, setModal] = useState<null | 'pay' | 'status' | 'edit' | 'enroll' | 'grade' | 'result' | 'return' | 'cabinet' | 'coin' | { fee: number; id: number }>(null);
+  const [modal, setModal] = useState<null | 'pay' | 'status' | 'edit' | 'enroll' | 'grade' | 'result' | 'return' | 'cabinet' | 'coin' | 'sub' | { fee: number; id: number }>(null);
   const canPay = role === 'rahbar' || role === 'admin' || role === 'bugalter';
   const canManage = role === 'rahbar' || role === 'admin';
   const st = STUDENT_STATUS[s.status];
@@ -419,6 +423,11 @@ function ProfileDrawer({ p, groups, role, showMoney, onClose }: { p: Profile; gr
         {(canManage || role === 'sotuv') && (
           <Button size="sm" variant="secondary" onClick={() => setModal('edit')}>
             <Pencil className="h-4 w-4" /> Tahrirlash
+          </Button>
+        )}
+        {(canManage || role === 'bugalter') && p.plans.length > 0 && current.length > 0 && (
+          <Button size="sm" variant="secondary" onClick={() => setModal('sub')}>
+            <Ticket className="h-4 w-4" /> Abonement
           </Button>
         )}
         {canManage && (
@@ -530,6 +539,30 @@ function ProfileDrawer({ p, groups, role, showMoney, onClose }: { p: Profile; gr
                   <Info label="Qaytarish urinishi" value={s.returnAttempt as string} />
                   <Info label="Natija" value={s.returnResult as string} />
                 </dl>
+              </Section>
+            )}
+
+            {p.subscriptions.length > 0 && (
+              <Section title="Abonementlar">
+                <ul className="divide-y divide-line">
+                  {p.subscriptions.map((x) => {
+                    const t = today();
+                    const ended = x.status !== 'faol' || x.end_date < t || (x.kind === 'dars' && x.used >= x.lessons_total);
+                    return (
+                      <li key={x.id} className={cn('px-4 py-3', ended && 'opacity-60')}>
+                        <div className="flex items-center justify-between gap-2 text-sm">
+                          <b>{x.name}</b>
+                          <Badge tone={x.status === 'faol' && !ended ? 'good' : 'neutral'}>{x.status === 'bekor' ? 'Bekor' : x.status === 'toxtatildi' ? "To'xtatilgan" : ended ? 'Tugagan' : 'Faol'}</Badge>
+                        </div>
+                        <div className="text-xs text-fg-muted">
+                          {x.grp} · {fmtShort(x.start_date)} — {fmtDate(x.end_date)}
+                          {x.kind === 'dars' && ` · ${x.used}/${x.lessons_total} dars`}
+                          {showMoney && ` · ${money(x.price)}`}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
               </Section>
             )}
 
@@ -757,6 +790,9 @@ function ProfileDrawer({ p, groups, role, showMoney, onClose }: { p: Profile; gr
       <Modal open={modal === 'cabinet'} onClose={() => setModal(null)} title="Ota-ona kabineti" sub="Ota-ona parolsiz kiradi: balans, davomat, baholar, coinlar" size="sm">
         {modal === 'cabinet' && <CabinetLink id={s.id} active={!!s.cabinet} telegram={!!s.telegram} />}
       </Modal>
+      <Modal open={modal === 'sub'} onClose={() => setModal(null)} title="Abonement rasmiylashtirish" sub={s.fullName} size="lg">
+        {modal === 'sub' && <SellForm studentId={s.id} plans={p.plans} enrollments={p.enrollments.filter((e) => e.active && !e.endDate)} onDone={() => setModal(null)} />}
+      </Modal>
       <Modal open={modal === 'coin'} onClose={() => setModal(null)} title="Coin berish" size="sm">
         {modal === 'coin' && (
           <ActionForm action={giveCoins.bind(null, s.id)} onDone={() => setModal(null)} onCancel={() => setModal(null)}>
@@ -895,7 +931,7 @@ function Info({ label, value, className }: { label: string; value?: string | nul
 
 function CabinetLink({ id, active, telegram }: { id: number; active: boolean; telegram: boolean }) {
   const toast = useToast();
-  const [link, setLink] = useState<{ url: string; bot: string | null } | null>(null);
+  const [link, setLink] = useState<{ url: string; app: string; bot: string | null } | null>(null);
   const copy = async (t: string) => {
     try {
       await navigator.clipboard.writeText(t);
@@ -911,8 +947,15 @@ function CabinetLink({ id, active, telegram }: { id: number; active: boolean; te
       </p>
       {link && (
         <div className="space-y-2">
+          <div className="rounded-xl border border-brand/40 bg-brand-soft/40 p-3">
+            <div className="text-xs font-semibold text-fg-muted">Mobil ilova havolasi (tavsiya etiladi)</div>
+            <div className="mt-1 break-all text-sm">{link.app}</div>
+            <Button size="sm" variant="ghost" className="mt-1 -ml-2" onClick={() => copy(link.app)}>
+              <Copy className="h-4 w-4" /> Nusxa
+            </Button>
+          </div>
           <div className="rounded-xl border border-line p-3">
-            <div className="text-xs font-semibold text-fg-muted">Kabinet havolasi</div>
+            <div className="text-xs font-semibold text-fg-muted">Kabinet havolasi (brauzerda)</div>
             <div className="mt-1 break-all text-sm">{link.url}</div>
             <Button size="sm" variant="ghost" className="mt-1 -ml-2" onClick={() => copy(link.url)}>
               <Copy className="h-4 w-4" /> Nusxa
@@ -935,7 +978,7 @@ function CabinetLink({ id, active, telegram }: { id: number; active: boolean; te
           variant="primary"
           action={async () => {
             const r = await createCabinetLink(id);
-            if (r.ok && r.url) setLink({ url: r.url, bot: r.bot ?? null });
+            if (r.ok && r.url) setLink({ url: r.url, app: r.app ?? r.url, bot: r.bot ?? null });
             return r;
           }}
           confirm={active ? "Eski havola ishlamay qoladi. Yangisini yaratamizmi?" : undefined}
@@ -949,5 +992,56 @@ function CabinetLink({ id, active, telegram }: { id: number; active: boolean; te
         )}
       </div>
     </div>
+  );
+}
+
+function SellForm({ studentId, plans, enrollments, onDone }: { studentId: number; plans: (PlanLite & { course_id: number | null })[]; enrollments: { id: number; group: string; course: string; groupId: number }[]; onDone: () => void }) {
+  const [enr, setEnr] = useState(enrollments[0]?.id ?? 0);
+  const [plan, setPlan] = useState<number | null>(null);
+  const [pay, setPay] = useState(true);
+  const course = enrollments.find((e) => e.id === enr)?.course;
+  const fit = plans.filter((x) => !x.course || x.course === course);
+  const chosen = fit.find((x) => x.id === plan);
+  return (
+    <ActionForm action={sellSubscription.bind(null, studentId)} onDone={onDone} onCancel={onDone} submitLabel={chosen ? `Rasmiylashtirish · ${money(chosen.price)}` : 'Rasmiylashtirish'}>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Guruh">
+          <select name="enrollmentId" value={enr} onChange={(e) => { setEnr(Number(e.target.value)); setPlan(null); }} className="field">
+            {enrollments.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.group} ({e.course})
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Boshlanish sanasi">
+          <input type="date" name="startDate" defaultValue={today()} className="field" />
+        </Field>
+      </div>
+      <input type="hidden" name="planId" value={plan ?? ''} />
+      {fit.length === 0 ? (
+        <p className="rounded-field bg-warn-soft px-3 py-2.5 text-sm text-warn">Bu yo&apos;nalish uchun paket yo&apos;q. Abonementlar bo&apos;limida qo&apos;shing.</p>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {fit.map((x) => (
+            <PlanCard key={x.id} p={x} compact selected={plan === x.id} onClick={() => setPlan(x.id)} />
+          ))}
+        </div>
+      )}
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="pay" checked={pay} onChange={(e) => setPay(e.target.checked)} className="h-4 w-4 accent-[#0E7C6B]" /> To&apos;lovni hozir qabul qilish
+      </label>
+      {pay && (
+        <Field label="To'lov usuli">
+          <select name="method" defaultValue="naqd" className="field">
+            {Object.entries(PAY_METHOD_LABEL).map(([k, l]) => (
+              <option key={k} value={k}>
+                {l}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+    </ActionForm>
   );
 }

@@ -60,7 +60,9 @@ export async function ensureMonthlyCharges(force = false) {
       cross join lateral generate_series(date_trunc('month', e.start_date), date_trunc('month', least(coalesce(e.end_date, ${t}::date), ${t}::date)), interval '1 month') m(d)
       where g.billing = 'oylik' and e.start_date <= ${t}::date
         and not exists (select 1 from charges c where c.enrollment_id = e.id and c.kind = 'oylik' and c.month = to_char(m.d, 'YYYY-MM'))
-        and not exists (select 1 from charges c where c.student_id = e.student_id and c.group_id = e.group_id and c.enrollment_id <> e.id and c.kind = 'oylik' and c.month = to_char(m.d, 'YYYY-MM'))`);
+        and not exists (select 1 from charges c where c.student_id = e.student_id and c.group_id = e.group_id and c.enrollment_id <> e.id and c.kind = 'oylik' and c.month = to_char(m.d, 'YYYY-MM'))
+        and not exists (select 1 from student_subscriptions ss where ss.enrollment_id = e.id and ss.kind = 'oy' and ss.status in ('faol','toxtatildi')
+          and to_char(m.d, 'YYYY-MM') between to_char(ss.start_date, 'YYYY-MM') and to_char(ss.end_date, 'YYYY-MM'))`);
     for (const r of missing) {
       const first = r.m === r.start_date.slice(0, 7);
       const amount = first ? firstMonthAmount(r.monthly_fee, r.days, r.start_date) : r.monthly_fee;
@@ -79,6 +81,9 @@ export async function ensureMonthlyCharges(force = false) {
     where g.billing = 'oylik' and e.start_date <= ${t}::date
       -- Shu oy shu guruhda avval hisoblangan bo'lsa (muzlatib qaytgan, qayta yozilgan) — ikkinchi marta yechilmaydi
       and not exists (select 1 from charges c where c.student_id = e.student_id and c.group_id = e.group_id and c.enrollment_id <> e.id and c.kind = 'oylik' and c.month = to_char(m.d, 'YYYY-MM'))
+      -- Abonement bilan qoplangan oylar uchun alohida oylik yechilmaydi
+      and not exists (select 1 from student_subscriptions ss where ss.enrollment_id = e.id and ss.kind = 'oy' and ss.status in ('faol','toxtatildi')
+        and to_char(m.d, 'YYYY-MM') between to_char(ss.start_date, 'YYYY-MM') and to_char(ss.end_date, 'YYYY-MM'))
     on conflict do nothing`);
 }
 
@@ -114,12 +119,34 @@ export async function syncLessonCharges(groupId: number, date: string, byUserId?
       await db.delete(charges).where(eq(charges.attendanceId, a.id));
       continue;
     }
-    const amount = lessonPrice(e!.monthly_fee, g.days, date);
+    // Abonement bilan qoplangan dars: pul yechilmaydi, abonementdan bitta dars hisoblanadi
+    const subId = await coveringSubscription(e!.id, date, a.id);
+    const amount = subId ? 0 : lessonPrice(e!.monthly_fee, g.days, date);
+    const kind = subId ? 'abonement_dars' : 'dars';
     await db
       .insert(charges)
-      .values({ studentId: a.studentId, enrollmentId: e!.id, groupId, kind: 'dars', amount, date, month: date.slice(0, 7), attendanceId: a.id, createdById: byUserId ?? null })
-      .onConflictDoUpdate({ target: charges.attendanceId, targetWhere: sql`attendance_id is not null`, set: { amount, enrollmentId: e!.id } });
+      .values({ studentId: a.studentId, enrollmentId: e!.id, groupId, kind, amount, date, month: date.slice(0, 7), attendanceId: a.id, subscriptionId: subId, createdById: byUserId ?? null })
+      .onConflictDoUpdate({ target: charges.attendanceId, targetWhere: sql`attendance_id is not null`, set: { amount, kind, subscriptionId: subId, enrollmentId: e!.id } });
   }
+}
+
+/**
+ * Shu sanadagi dars uchun abonement: "oy" abonementi oyni to'liq qoplaydi; "dars" abonementida
+ * hali ishlatilmagan dars qolgan bo'lsa qoplaydi (shu davomat avval hisoblangan bo'lsa ham qayta sanalmaydi).
+ */
+async function coveringSubscription(enrollmentId: number, date: string, attendanceId: number): Promise<number | null> {
+  const rows = await db.execute<{ id: number; kind: string; lessons_total: number; used: number }>(sql`
+    select ss.id, ss.kind, ss.lessons_total,
+      (select count(*) from charges c where c.subscription_id = ss.id and c.kind = 'abonement_dars' and c.attendance_id <> ${attendanceId})::int used
+    from student_subscriptions ss
+    where ss.enrollment_id = ${enrollmentId} and ss.status in ('faol','toxtatildi')
+      and (
+        (ss.kind = 'oy' and to_char(${date}::date, 'YYYY-MM') between to_char(ss.start_date, 'YYYY-MM') and to_char(ss.end_date, 'YYYY-MM'))
+        or (ss.kind = 'dars' and ${date}::date between ss.start_date and ss.end_date)
+      )
+    order by (ss.kind = 'oy') desc, ss.start_date, ss.id`);
+  for (const r of rows) if (r.kind === 'oy' || r.used < r.lessons_total) return r.id;
+  return null;
 }
 
 /** Oylik narx o'zgarsa — joriy oyning oylik yechimi ham yangilanadi (o'tgan oylar o'zgarmaydi) */

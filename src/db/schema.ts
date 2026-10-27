@@ -638,6 +638,8 @@ export const charges = pgTable(
     date: date('date').notNull(),
     month: text('month'),
     attendanceId: integer('attendance_id'),
+    /** Abonement bilan bog'liq yechim (sotuv yoki abonementdan yechilgan dars) */
+    subscriptionId: integer('subscription_id'),
     note: text('note'),
     createdById: integer('created_by_id').references(() => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -803,4 +805,59 @@ export const coins = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('coins_student_idx').on(t.studentId), uniqueIndex('coins_auto_uq').on(t.autoKey)],
+);
+
+/* ===================== Abonementlar ===================== */
+
+/** Abonement paketlari: N oylik yoki N darslik, chegirmali narx bilan */
+export const subscriptionPlans = pgTable('subscription_plans', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  /** Faqat shu yo'nalish uchun (bo'sh — hammasi uchun) */
+  courseId: integer('course_id').references(() => courses.id, { onDelete: 'set null' }),
+  /** 'oy' — N oy (shu oylarning oylik to'lovi o'rniga); 'dars' — N ta dars (muddat ichida) */
+  kind: text('kind').notNull().default('oy'),
+  months: integer('months').notNull().default(1),
+  lessons: integer('lessons').notNull().default(12),
+  /** "dars" abonementi necha kun amal qiladi */
+  validDays: integer('valid_days').notNull().default(60),
+  price: integer('price').notNull(),
+  /** Chegirmasiz narx (ko'rsatish uchun) */
+  oldPrice: integer('old_price'),
+  description: text('description'),
+  color: text('color').notNull().default('#D93A08'),
+  popular: boolean('popular').notNull().default(false),
+  active: boolean('active').notNull().default(true),
+  position: integer('position').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** O'quvchiga sotilgan abonement */
+export const studentSubscriptions = pgTable(
+  'student_subscriptions',
+  {
+    id: serial('id').primaryKey(),
+    studentId: integer('student_id')
+      .notNull()
+      .references(() => students.id, { onDelete: 'cascade' }),
+    planId: integer('plan_id').references(() => subscriptionPlans.id, { onDelete: 'set null' }),
+    enrollmentId: integer('enrollment_id')
+      .notNull()
+      .references(() => enrollments.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    kind: text('kind').notNull(),
+    startDate: date('start_date').notNull(),
+    endDate: date('end_date').notNull(),
+    lessonsTotal: integer('lessons_total').notNull().default(0),
+    price: integer('price').notNull(),
+    /** 'faol' | 'toxtatildi' (sanadan boshlab bekor, qolgani qaytarilgan) | 'bekor' (to'liq qaytarilgan) */
+    status: text('status').notNull().default('faol'),
+    refund: integer('refund').notNull().default(0),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledById: integer('cancelled_by_id').references(() => users.id),
+    cancelReason: text('cancel_reason'),
+    createdById: integer('created_by_id').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('subs_student_idx').on(t.studentId), index('subs_enr_idx').on(t.enrollmentId)],
 );

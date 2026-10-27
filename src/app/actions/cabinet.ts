@@ -29,7 +29,7 @@ export async function createCabinetLink(studentId: number) {
     if (!r.length) throw new Error("O'quvchi topilmadi.");
     await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: 'Ota-ona kabineti havolasi berildi', detail: r[0].n });
     const bot = await botInfo();
-    return { message: 'Havola tayyor', url: `${siteUrl()}/ota-ona/${token}`, bot: bot ? `https://t.me/${bot.username}?start=${code}` : null };
+    return { message: 'Havola tayyor', url: `${siteUrl()}/ota-ona/${token}`, app: `${siteUrl()}/ilova/ulanish/${token}`, bot: bot ? `https://t.me/${bot.username}?start=${code}` : null };
   });
 }
 

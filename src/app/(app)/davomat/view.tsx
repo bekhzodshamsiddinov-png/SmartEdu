@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { CheckCheck, ChevronLeft, ChevronRight, Loader2, Phone, PhoneCall, CalendarCheck, CheckCircle2 } from 'lucide-react';
+import { CheckCheck, ChevronLeft, ChevronRight, Loader2, Phone, PhoneCall, CalendarCheck, CheckCircle2, QrCode } from 'lucide-react';
 import { Avatar, Badge, Button, Card, Empty, PageHeader, cn } from '@/components/ui';
 import { Modal } from '@/components/modal';
 import { useToast } from '@/components/toast';
@@ -192,6 +192,11 @@ export function AttendanceView({
                 </div>
                 <div className="flex items-center gap-2">
                   {isMarked && <Badge tone="good">Saqlangan</Badge>}
+                  {date === todayStr && group.today && (
+                    <Link href={`/davomat/skaner?guruh=${group.id}`} className="inline-flex h-8 items-center gap-1.5 rounded-field bg-ink px-3 text-[13px] font-bold text-white">
+                      <QrCode className="h-4 w-4" /> QR skaner
+                    </Link>
+                  )}
                   <Button size="sm" variant="soft" onClick={() => setState(Object.fromEntries(members.map((m) => [m.id, { status: 'keldi' as St, reason: '', reasonId: null }])))}>
                     <CheckCheck className="h-4 w-4" /> Hammasi keldi
                   </Button>

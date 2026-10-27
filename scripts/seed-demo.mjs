@@ -18,7 +18,7 @@ const today = tz(new Date());
 const addDays = (s, n) => { const d = s instanceof Date ? new Date(s) : new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const rnd = (a) => a[Math.floor(Math.random() * a.length)];
 
-await sql`truncate coins, outbox, sales_plans, rooms, job_runs, salary_payouts, staff_adjustments, cash_transfers, cashboxes, charges, auth_attempts, audit_log, payme_transactions, branches, lesson_progress, course_orders, promo_codes, learners, course_lessons, course_modules, online_courses, staff_reports, tasks, graduates, results, grades, notes, leads, reconciliations, transactions, payments, attendance, lessons, enrollments, students, groups, courses, users, settings restart identity cascade`;
+await sql`truncate student_subscriptions, subscription_plans, coins, outbox, sales_plans, rooms, job_runs, salary_payouts, staff_adjustments, cash_transfers, cashboxes, charges, auth_attempts, audit_log, payme_transactions, branches, lesson_progress, course_orders, promo_codes, learners, course_lessons, course_modules, online_courses, staff_reports, tasks, graduates, results, grades, notes, leads, reconciliations, transactions, payments, attendance, lessons, enrollments, students, groups, courses, users, settings restart identity cascade`;
 const hash = await bcrypt.hash('123456', 10);
 await sql`insert into settings (id, center_name) values (1, 'United IT Clubs')`;
 const [br1] = await sql`insert into branches (name, address) values ('Davlatobod filiali', 'Davlatobod tumani') returning id`;
@@ -153,5 +153,10 @@ await mk("YouTube blogging: noldan daromadgacha", 'youtube-blogging', 'youtube',
   "O'z mavzungizda kanal ochish\nTelefonda sifatli video olish va montaj qilish\nVideolarni qidiruvda chiqarish\nKanaldan daromad olish yo'llari", "Blog ochmoqchi bo'lganlar\nBiznesini YouTube orqali rivojlantirmoqchilar");
 await sql`update students set birth_date = make_date(coalesce(birth_year, 2010), 1 + (id % 12), 1 + (id % 27)) where birth_year is not null`;
 await sql`update leads set call_status = 'qayta_qongiroq', next_call_at = ${today} where id in (select id from leads where stage in ('yangi','boglanildi') order by id limit 3)`;
+await sql`insert into subscription_plans (name, kind, months, lessons, valid_days, price, old_price, color, popular, description, position) values
+  ('1 oylik', 'oy', 1, 12, 30, 400000, null, '#0C1631', false, null, 1),
+  ('3 oylik', 'oy', 3, 12, 30, 1080000, 1200000, '#D93A08', true, 'Sertifikat bepul', 2),
+  ('6 oylik', 'oy', 6, 12, 30, 1980000, 2400000, '#1878AE', false, 'Shaxsiy mentor bilan 2 ta dars', 3),
+  ('12 darslik', 'dars', 1, 12, 45, 420000, 450000, '#0E7C6B', false, null, 4)`;
 console.log('Demo tayyor:', studentIds.length, "o'quvchi");
 await sql.end();

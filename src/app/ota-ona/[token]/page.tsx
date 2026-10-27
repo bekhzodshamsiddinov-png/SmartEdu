@@ -54,6 +54,13 @@ export default async function ParentCabinet({ params }: { params: Promise<{ toke
         </div>
       </header>
       <div className="mx-auto max-w-2xl space-y-4 px-4 pt-5">
+        <a href={`/ilova/ulanish/${token}`} className="flex items-center justify-between gap-3 rounded-[20px] bg-[#D93A08] px-4 py-3 text-white">
+          <span>
+            <span className="block font-extrabold">Mobil ilovani oching</span>
+            <span className="block text-xs text-white/80">QR davomat, eslatmalar va abonement — telefoningizda</span>
+          </span>
+          <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-bold">Ochish</span>
+        </a>
         <div className="grid grid-cols-3 gap-3">
           <div className="card px-3 py-3">
             <div className="text-xs font-semibold text-fg-muted">{bal < 0 ? 'Qarz' : 'Hisobda'}</div>
