@@ -754,7 +754,7 @@ function ProfileDrawer({ p, groups, role, showMoney, onClose }: { p: Profile; gr
 
         {tab === 'natija' && (
           <Section title="Yutuqlari" action={role !== 'bugalter' && role !== 'sotuv' && <Button size="sm" variant="ghost" onClick={() => setModal('result')}><Plus className="h-4 w-4" /> Yutuq qo&apos;shish</Button>}>
-            <ResultList rows={p.results} canEdit={['rahbar', 'admin', 'marketing'].includes(role)} />
+            <ResultList rows={p.results} canEdit={['rahbar', 'admin'].includes(role)} />
           </Section>
         )}
       </div>

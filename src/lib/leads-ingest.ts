@@ -40,7 +40,15 @@ export type IngestInput = {
   assignedToId?: number | null;
   referredByStudentId?: number | null;
   trialDate?: string | null;
+  /** Filialga bog'langan xodim kiritayotgan bo'lsa — boshqa filial lidiga tegolmaydi */
+  lockedBranch?: number | null;
 };
+
+export class OtherBranchLead extends Error {
+  constructor() {
+    super("Bu raqam boshqa filial lidlarida bor. Rahbar yoki o'sha filial bilan bog'laning.");
+  }
+}
 
 export type IngestResult = { id: number; duplicate: boolean; reopened: boolean; name: string; studentName: string | null };
 
@@ -65,16 +73,26 @@ export async function ingestLead(i: IngestInput): Promise<IngestResult> {
     }
     const [st] = await tx.execute<{ full_name: string }>(sql`
       select full_name from students where phone = ${i.phone} or parent_phone = ${i.phone} order by id desc limit 1`);
-    const [old] = await tx.execute<{ id: number; full_name: string; stage: string; course_id: number | null; external_id: string | null }>(sql`
-      select id, full_name, stage::text, course_id, external_id from leads where phone = ${i.phone} order by created_at desc limit 1 for update`);
+    const [old] = await tx.execute<{ id: number; full_name: string; stage: string; course_id: number | null; external_id: string | null; branch_id: number | null; last_touch: string; seller_active: boolean | null }>(sql`
+      select l.id, l.full_name, l.stage::text, l.course_id, l.external_id, l.branch_id, l.last_touch_at::text last_touch,
+        (select u.active from users u where u.id = l.assigned_to_id) seller_active
+      from leads l where l.phone = ${i.phone} order by l.created_at desc limit 1 for update`);
     if (old) {
+      if (i.lockedBranch && old.branch_id && old.branch_id !== i.lockedBranch) throw new OtherBranchLead();
+      // Ochiq formalar (sayt, ariza): 24 soat ichida qayta yuborilsa — hech narsa o'zgarmaydi (spam lidni qayta ochib yubormasin)
+      if ((i.via === 'ariza' || i.via === 'uitc') && Date.now() - Date.parse(old.last_touch) < 24 * 3600 * 1000) {
+        return { id: old.id, duplicate: true, reopened: false, name: old.full_name, studentName: null };
+      }
       const reopen = old.stage === 'rad_etdi';
+      // Qayta ochilgan lidning sotuvchisi ishdan ketgan bo'lsa — navbatdagisiga
+      const reassign = reopen && old.seller_active === false ? await nextSeller(tx, old.branch_id) : null;
       await tx.execute(sql`
         update leads set touches = touches + 1, last_touch_at = now(), updated_at = now(),
           course_id = coalesce(course_id, ${i.courseId ?? null}),
           external_id = coalesce(external_id, ${i.externalId ?? null}),
           referred_by_student_id = coalesce(referred_by_student_id, ${i.referredByStudentId ?? null})
           ${reopen ? sql`, stage = 'yangi', lost_reason = null, call_status = null, next_call_at = ${null}` : sql``}
+          ${reassign ? sql`, assigned_to_id = ${reassign.id}` : sql``}
         where id = ${old.id}`);
       await tx.execute(sql`
         insert into lead_touches (lead_id, source, campaign, ad, via, detail, created_by_id)

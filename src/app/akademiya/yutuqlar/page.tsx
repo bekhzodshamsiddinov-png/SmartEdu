@@ -59,10 +59,14 @@ export default async function PublicAchievements() {
           <p className="mt-3 max-w-xl text-white/70">Musobaqalardagi o&apos;rinlar, Play Market&apos;ga chiqqan ilovalar, sotilgan loyihalar va ishga kirganlar. Har biri o&apos;quvchi va ota-ona roziligi bilan.</p>
           <div className="mt-8 grid max-w-xl grid-cols-3 gap-3">
             {[
+              { v: rows.length, l: 'yutuq' },
               { v: prizes, l: "sovrinli o'rin" },
               { v: apps, l: 'ilova Play Market’da' },
               { v: jobs, l: 'ishga kirdi' },
-            ].map((x) => (
+            ]
+              .filter((x) => x.v > 0)
+              .slice(0, 3)
+              .map((x) => (
               <div key={x.l} className="rounded-2xl bg-white/[0.06] p-4">
                 <div className="text-3xl font-extrabold text-[#7CE0C8] tnum">{x.v}</div>
                 <div className="text-xs font-semibold text-white/60">{x.l}</div>

@@ -33,7 +33,7 @@ export default async function AchievementsPage({ searchParams }: { searchParams:
       year={year}
       years={[...new Set([today().slice(0, 4), ...years.map((y) => y.y)])]}
       canAdd={!['bugalter', 'sotuv'].includes(user.role)}
-      canEdit={['rahbar', 'admin', 'marketing'].includes(user.role)}
+      canEdit={['rahbar', 'admin'].includes(user.role)}
     />
   );
 }

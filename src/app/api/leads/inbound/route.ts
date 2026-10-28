@@ -6,6 +6,7 @@ import { courses } from '@/db/schema';
 import { clean, ingestLead } from '@/lib/leads-ingest';
 import { normalizePhone } from '@/lib/format';
 import { notifyTelegram } from '@/lib/payments';
+import { overLimit } from '@/lib/security';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,6 +36,7 @@ export async function POST(req: Request) {
   const name = String(d.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
   const phone = normalizePhone(String(d.phone ?? ''));
   if (name.length < 2 || !/^998\d{9}$/.test(phone)) return NextResponse.json({ ok: false, error: 'invalid' }, { status: 422 });
+  if (await overLimit('uitc-phone', phone, 5, 1440)) return NextResponse.json({ ok: true, duplicate: true });
   const courseText = String(d.course ?? '').trim().slice(0, 80);
   const note = [String(d.note ?? '').trim().slice(0, 300), courseText && `Qiziqqan kurs: ${courseText}`].filter(Boolean).join('. ');
   // Sayt kursi → CRM yo'nalishi: avval ma'lum slug bo'yicha kalit so'z, bo'lmasa nomning birinchi so'zi

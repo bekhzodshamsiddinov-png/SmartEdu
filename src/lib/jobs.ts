@@ -56,6 +56,8 @@ export async function alumniTasks() {
     from students s left join graduates gr on gr.student_id = s.id
     where s.status = 'bitirgan' and coalesce(s.graduated_at, ${t}::date) <= ${t}::date - 7
       and (gr.next_contact_at <= ${t} or (gr.next_contact_at is null and coalesce(gr.last_contact_at, s.graduated_at, ${t}::date) <= ${t}::date - ${n}::int))
+      and not exists (select 1 from tasks tk where tk.auto_key like 'alumni:' || s.id || ':%' and tk.status <> 'bajarildi')
+    order by coalesce(gr.last_contact_at, s.graduated_at) nulls first, s.id
     limit 200`);
   for (const r of rows) {
     const [who] = await db.execute<{ id: number }>(sql`

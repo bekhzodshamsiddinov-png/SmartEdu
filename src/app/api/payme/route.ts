@@ -1,3 +1,4 @@
+import { ipAllowed, requestIp } from '@/lib/ip-allow';
 /**
  * Payme Merchant API (JSON-RPC 2.0).
  * Kabinetda "Endpoint" sifatida: https://<sayt>/api/payme
@@ -50,6 +51,8 @@ async function checkOrder(params: Record<string, unknown>) {
 }
 
 export async function POST(req: Request) {
+  // Ixtiyoriy: faqat Payme serverlari IP manzillaridan (PAYME_ALLOWED_IPS)
+  if (!ipAllowed(requestIp(req), process.env.PAYME_ALLOWED_IPS)) return new Response('Forbidden', { status: 403 });
   const cfg = paymeConfig();
   let body: Rpc = {};
   try {

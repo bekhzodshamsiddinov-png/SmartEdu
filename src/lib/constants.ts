@@ -32,7 +32,7 @@ export const LEAD_SOURCES = [
 export const SOURCE_COLOR: Record<string, string> = {
   'Instagram target': '#D6246E',
   'Facebook target': '#1877F2',
-  Instagram: '#E1306C',
+  Instagram: '#8134AF',
   Telegram: '#229ED9',
   'uitc.uz': '#0B78A6',
   'Akademiya sayti': '#0E7C6B',

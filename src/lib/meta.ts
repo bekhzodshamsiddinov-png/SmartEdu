@@ -29,6 +29,8 @@ export type MetaInfo = {
   lastEventAt?: string;
   lastSyncAt?: string;
   lastError?: string | null;
+  /** Token bekor qilingan — qayta ulanmaguncha Meta'ga so'rov yuborilmaydi */
+  tokenExpired?: boolean;
 };
 
 export async function loadMeta() {
@@ -128,7 +130,7 @@ type GraphLead = {
 const LEAD_FIELDS = 'id,created_time,field_data,ad_id,ad_name,adset_name,campaign_name,form_id,platform,is_organic';
 
 /** Navbatdagi bitta lidni Meta'dan olib, CRM ga yozadi */
-async function processOne(row: { id: number; leadgen_id: string; form_id: string | null }, ctx: { token: string; appSecret: string; forms: MetaForm[] }) {
+async function processOne(row: { id: number; leadgen_id: string; form_id: string | null }, ctx: { token: string; appSecret: string; forms: MetaForm[] }): Promise<boolean | 'stop'> {
   try {
     const l = await graph<GraphLead>(`/${row.leadgen_id}`, { token: ctx.token, appSecret: ctx.appSecret, params: { fields: LEAD_FIELDS } });
     const fields = new Map<string, string>();
@@ -170,26 +172,39 @@ async function processOne(row: { id: number; leadgen_id: string; form_id: string
   } catch (e) {
     const msg = e instanceof GraphError ? e.message : 'Ichki xato';
     if (!(e instanceof GraphError)) console.error('[meta]', (e as Error)?.message?.slice(0, 200));
-    await db.execute(sql`update meta_leads set status = 'xato', error = ${msg}, attempts = attempts + 1 where id = ${row.id}`);
-    if (e instanceof GraphError && e.code === 190) await saveMeta({ info: { lastError: msg } });
-    return false;
+    // Token eskirgan yoki Meta chegarasi — lid aybdor emas: urinish hisoblanmaydi, navbatga qaytadi, partiya to'xtaydi
+    const systemic = e instanceof GraphError && [190, 4, 17, 32, 613].includes(e.code ?? 0);
+    await db.execute(sql`update meta_leads set status = ${systemic ? 'kutilmoqda' : 'xato'}, error = ${msg}, attempts = attempts + ${systemic ? 0 : 1}, processed_at = now() where id = ${row.id}`);
+    if (e instanceof GraphError && e.code === 190) await saveMeta({ info: { lastError: msg, tokenExpired: true } });
+    return systemic ? 'stop' : false;
   }
 }
 
 /** Kutilayotgan va xato bo'lgan lidlarni qayta ishlaydi (urinishlar orasidagi kutish oshib boradi, 8 tadan keyin to'xtaydi) */
 export async function processPending(limit = 20) {
   const { secret, info } = await loadMeta();
-  if (!secret?.pageToken || !secret.appSecret) return 0;
+  if (!secret?.pageToken || !secret.appSecret || info.tokenExpired) return 0;
   const rows = await db.execute<{ id: number; leadgen_id: string; form_id: string | null }>(sql`
     update meta_leads set status = 'jarayonda', processed_at = now()
     where id in (
       select id from meta_leads
-      where (status = 'kutilmoqda' or (status = 'xato' and attempts < 8 and received_at < now() - (attempts * attempts || ' minutes')::interval)
-        or (status = 'jarayonda' and processed_at < now() - interval '5 minutes'))
+      where (status = 'kutilmoqda' and (processed_at is null or processed_at < now() - interval '2 minutes'))
+        or (status = 'xato' and attempts < 8 and processed_at < now() - (attempts * attempts * 2 || ' minutes')::interval)
+        or (status = 'jarayonda' and processed_at < now() - interval '5 minutes')
       order by id limit ${limit} for update skip locked)
     returning id, leadgen_id, form_id`);
   let ok = 0;
-  for (const r of rows) if (await processOne(r, { token: secret.pageToken, appSecret: secret.appSecret, forms: info.forms ?? [] })) ok++;
+  const ctx = { token: secret.pageToken, appSecret: secret.appSecret, forms: info.forms ?? [] };
+  for (let i = 0; i < rows.length; i++) {
+    const r = await processOne(rows[i], ctx);
+    if (r === 'stop') {
+      // Qolganlari keyingi safar (navbatga qaytariladi)
+      const rest = rows.slice(i + 1).map((x) => x.id);
+      if (rest.length) await db.execute(sql`update meta_leads set status = 'kutilmoqda', processed_at = now() where id in (${sql.join(rest.map((x) => sql`${x}`), sql`, `)})`);
+      break;
+    }
+    if (r) ok++;
+  }
   return ok;
 }
 
@@ -205,24 +220,32 @@ export async function enqueueMetaLead(leadgenId: string, v: { pageId?: string | 
 /** Zaxira: barcha formalardan oxirgi `hours` soat lidlarini olib, navbatga qo'shadi */
 export async function syncRecent(hours = 48) {
   const { secret, info } = await loadMeta();
-  if (!secret?.pageToken || !secret.appSecret || !info.pageId) return { added: 0, processed: 0 };
+  if (!secret?.pageToken || !secret.appSecret || !info.pageId || info.tokenExpired) return { added: 0, processed: 0 };
   let added = 0;
   try {
     const forms = await fetchForms(info.pageId, secret.pageToken, secret.appSecret);
-    const keep = new Map((info.forms ?? []).map((f) => [f.id, f]));
-    const merged = forms.map((f) => ({ ...f, branchId: keep.get(f.id)?.branchId ?? null, courseId: keep.get(f.id)?.courseId ?? null }));
     const since = Math.floor(Date.now() / 1000) - hours * 3600;
     for (const f of forms.filter((x) => x.status !== 'ARCHIVED' && x.status !== 'DELETED').slice(0, 40)) {
-      const r = await graph<{ data: { id: string }[] }>(`/${f.id}/leads`, {
-        token: secret.pageToken,
-        appSecret: secret.appSecret,
-        params: { fields: 'id', limit: '200', filtering: JSON.stringify([{ field: 'time_created', operator: 'GREATER_THAN', value: since }]) },
-      });
-      for (const l of r.data ?? []) if (await enqueueMetaLead(String(l.id), { pageId: info.pageId, formId: f.id })) added++;
+      let after: string | undefined;
+      // Sahifalab o'qiladi (har biri 200 tadan, ko'pi bilan 10 sahifa)
+      for (let pageN = 0; pageN < 10; pageN++) {
+        const r = await graph<{ data: { id: string }[]; paging?: { cursors?: { after?: string }; next?: string } }>(`/${f.id}/leads`, {
+          token: secret.pageToken,
+          appSecret: secret.appSecret,
+          params: { fields: 'id', limit: '200', filtering: JSON.stringify([{ field: 'time_created', operator: 'GREATER_THAN', value: since }]), ...(after ? { after } : {}) },
+        });
+        for (const l of r.data ?? []) if (await enqueueMetaLead(String(l.id), { pageId: info.pageId, formId: f.id })) added++;
+        after = r.paging?.next ? r.paging?.cursors?.after : undefined;
+        if (!after || !/^[\w=-]{1,400}$/.test(after)) break;
+      }
     }
+    // Forma → filial/kurs sozlamasi shu orada o'zgargan bo'lishi mumkin — yozishdan oldin qayta o'qiladi
+    const fresh = await loadMeta();
+    const keep = new Map((fresh.info.forms ?? []).map((f) => [f.id, f]));
+    const merged = forms.map((f) => ({ ...f, branchId: keep.get(f.id)?.branchId ?? null, courseId: keep.get(f.id)?.courseId ?? null }));
     await saveMeta({ info: { forms: merged, lastSyncAt: new Date().toISOString(), lastError: null } });
   } catch (e) {
-    await saveMeta({ info: { lastSyncAt: new Date().toISOString(), lastError: e instanceof GraphError ? e.message : 'Sinxronlashda xato' } });
+    await saveMeta({ info: { lastSyncAt: new Date().toISOString(), lastError: e instanceof GraphError ? e.message : 'Sinxronlashda xato', ...(e instanceof GraphError && e.code === 190 ? { tokenExpired: true } : {}) } });
   }
   const processed = await processPending(50);
   return { added, processed };

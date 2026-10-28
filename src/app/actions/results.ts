@@ -10,7 +10,7 @@ import { assertOwnStudent } from '@/lib/access';
 import { RESULT_LEVELS, RESULT_META, RESULT_PLACES, RESULT_TYPES } from '@/lib/constants';
 import { clean } from '@/lib/leads-ingest';
 
-const WRITERS = ['rahbar', 'admin', 'oqituvchi', 'support', 'marketing'];
+const WRITERS = ['rahbar', 'admin', 'oqituvchi', 'support'];
 
 /** Isbot havolasi faqat https bo'lishi kerak (javascript:, data: va h.k. rad etiladi) */
 function safeLink(v: string | null) {
@@ -28,7 +28,7 @@ function safeLink(v: string | null) {
 export async function addResult(studentId: number, fd: FormData) {
   return run(async () => {
     const u = await assertSection('students');
-    if (!WRITERS.includes(u.role)) throw new Error("Yutuqni o'qituvchi, administrator yoki marketolog yozadi.");
+    if (!WRITERS.includes(u.role)) throw new Error("Yutuqni o'qituvchi yoki administrator yozadi.");
     await assertBranch('student', studentId);
     const [st] = await db.select({ status: students.status }).from(students).where(eq(students.id, studentId));
     if (!st) throw new Error("O'quvchi topilmadi.");

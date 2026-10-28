@@ -18,12 +18,14 @@ export async function submitApplication(_: ApplyState, fd: FormData): Promise<Ap
     if (String(fd.get('website') ?? '')) return { ok: true }; // bot tuzog'i: odam bu maydonni ko'rmaydi
     const ip = await clientIp();
     if (await overLimit('ariza', ip, 5, 60)) return { error: "Juda ko'p ariza yuborildi. Birozdan keyin urinib ko'ring." };
-    // Umumiy chegara: ko'p IP dan hujum bo'lsa ham soatiga 100 tadan ortiq lid yaratilmaydi
-    if (await overLimit('ariza-all', '*', 100, 60)) return { error: "Hozir arizalar ko'p. Iltimos, bizga qo'ng'iroq qiling." };
     const name = String(fd.get('fullName') ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
     if (name.length < 2) return { error: 'Ismingizni yozing.' };
     const phone = normalizePhone(String(fd.get('phone') ?? ''));
     if (!/^998\d{9}$/.test(phone)) return { error: "Telefon raqamni to'g'ri kiriting: 90 123 45 67." };
+    // Bir raqamdan sutkasiga 3 tadan ortiq ariza — e'tiborsiz (umumiy limitni egallab olmasin)
+    if (await overLimit('ariza-phone', phone, 3, 1440)) return { ok: true };
+    // Umumiy chegara: ko'p IP dan hujum bo'lsa ham soatiga 200 tadan ortiq ariza qabul qilinmaydi
+    if (await overLimit('ariza-all', '*', 200, 60)) return { error: "Hozir arizalar ko'p. Iltimos, bizga qo'ng'iroq qiling." };
     const rawSource = String(fd.get('source') ?? '');
     const source = canonicalSource(rawSource, 'Akademiya sayti');
     const courseId = Number(fd.get('courseId')) || null;

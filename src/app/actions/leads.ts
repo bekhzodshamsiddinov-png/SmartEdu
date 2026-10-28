@@ -8,6 +8,7 @@ import { run, str, req, int } from '@/lib/action';
 import { normalizePhone } from '@/lib/format';
 import { CALL_STATUSES, LEAD_SOURCES, REFERRAL_SOURCES, STAGE_INDEX } from '@/lib/constants';
 import { clean, ingestLead } from '@/lib/leads-ingest';
+import { overLimit } from '@/lib/security';
 import { assertBranch, assertStaffFor, getBranchScope, lockedBranch, resolveBranch } from '@/lib/branch';
 
 export async function saveLead(id: number | null, fd: FormData) {
@@ -15,13 +16,17 @@ export async function saveLead(id: number | null, fd: FormData) {
     const u = await assertSection('leads');
     await assertBranch('lead', id);
     const source = str(fd, 'source');
-    if (!source || !LEAD_SOURCES.includes(source)) throw new Error('Lid qayerdan kelganini (manbani) tanlang.');
+    const prev = id ? (await db.select({ source: leads.source, phone: leads.phone, b: leads.branchId }).from(leads).where(eq(leads.id, id)))[0] : null;
+    if (id && !prev) throw new Error('Lid topilmadi.');
+    // Eski yozuvlardagi manba o'zgartirilmasa — qabul qilinadi
+    if (!source || (!LEAD_SOURCES.includes(source) && source !== prev?.source)) throw new Error('Lid qayerdan kelganini (manbani) tanlang.');
     const phone = normalizePhone(req(fd, 'phone', 'Telefon'));
     if (!/^\d{9,15}$/.test(phone)) throw new Error("Telefon raqam noto'g'ri.");
     let referredBy = REFERRAL_SOURCES.includes(source) ? int(fd, 'referredByStudentId') : null;
     if (referredBy) {
-      const [r] = await db.select({ id: students.id }).from(students).where(eq(students.id, referredBy));
-      if (!r) referredBy = null;
+      const [r] = await db.select({ id: students.id, b: students.branchId }).from(students).where(eq(students.id, referredBy));
+      const locked = await lockedBranch();
+      if (!r || (locked && r.b !== null && r.b !== locked)) referredBy = null;
     }
     const trialDate = str(fd, 'trialDate');
     if (trialDate && !/^\d{4}-\d{2}-\d{2}$/.test(trialDate)) throw new Error("Sana noto'g'ri.");
@@ -38,38 +43,47 @@ export async function saveLead(id: number | null, fd: FormData) {
       note: str(fd, 'note')?.slice(0, 1000) ?? null,
       updatedAt: new Date(),
     };
-    const branchId = id ? (await db.select({ b: leads.branchId }).from(leads).where(eq(leads.id, id)))[0]?.b : await resolveBranch(null);
+    const branchId = id ? prev!.b : await resolveBranch(null);
     await assertStaffFor(v.assignedToId, ['sotuv', 'admin', 'rahbar', 'marketing'], branchId);
     if (id) {
-      const [other] = await db.execute<{ full_name: string }>(sql`select full_name from leads where phone = ${phone} and id <> ${id} limit 1`);
-      if (other) throw new Error(`Bu raqam boshqa lidda bor: ${other.full_name}. Ikkalasini bitta lidda yuriting.`);
-      // Filiali aniqlanmagan lidni filial xodimi tahrirlasa — lid shu filialga o'tadi
       const locked = await lockedBranch();
-      await db.update(leads).set(locked && !branchId ? { ...v, branchId: locked } : v).where(eq(leads.id, id));
+      await db.transaction(async (tx) => {
+        // Raqam o'zgarsa — o'sha raqam bo'yicha boshqa jarayonlar bilan navbat (ikki lid paydo bo'lmasin)
+        if (phone !== prev!.phone) {
+          await tx.execute(sql`select pg_advisory_xact_lock(7704, hashtext(${phone}))`);
+          const [other] = await tx.execute(sql`select 1 from leads where phone = ${phone} and id <> ${id} limit 1`);
+          if (other) throw new Error('Bu raqam boshqa lidda bor — yangi raqam kiriting yoki o\'sha lidni yuriting.');
+        }
+        // Filiali aniqlanmagan lidni filial xodimi tahrirlasa — lid shu filialga o'tadi
+        await tx.update(leads).set(locked && !branchId ? { ...v, branchId: locked } : v).where(eq(leads.id, id));
+      });
       return { message: 'Lid yangilandi', id };
     }
     const r = await ingestLead({
       name: v.fullName, phone, source, campaign: v.campaign, ad: v.ad, courseId: v.courseId, branchId, note: v.note,
-      via: 'qolda', createdById: u.id, assignedToId: v.assignedToId, referredByStudentId: referredBy, trialDate,
+      via: 'qolda', createdById: u.id, assignedToId: v.assignedToId, referredByStudentId: referredBy, trialDate, lockedBranch: await lockedBranch(),
     });
     if (r.duplicate) return { message: `Bu raqam bazada bor (${r.name}) — yangi murojaat sifatida qo'shildi${r.reopened ? ', lid qayta ochildi' : ''}`, id: r.id };
-    return { message: r.studentName ? `Lid qo'shildi. Diqqat: raqam o'quvchi ${r.studentName} ga tegishli` : "Lid qo'shildi", id: r.id };
+    // Yangi lid — oyna yopiladi (call-center ketma-ket kiritaveradi); takror bo'lsa — mavjud lid ochiladi
+    return { message: r.studentName ? `Lid qo'shildi. Diqqat: raqam o'quvchi ${r.studentName} ga tegishli` : "Lid qo'shildi" };
   });
 }
 
 /** Lid qo'shishdan oldin: shu raqam bazada bormi (forma darhol ogohlantiradi) */
 export async function checkLeadPhone(raw: string) {
-  await assertSection('leads');
+  const u = await assertSection('leads');
   const phone = normalizePhone(String(raw ?? ''));
   if (!/^\d{9,15}$/.test(phone)) return null;
+  if (await overLimit('lead-phone-check', String(u.id), 120, 60)) return null;
   const scope = await getBranchScope();
   const [l] = await db.execute<{ id: number; full_name: string; stage: string; source: string; branch_id: number | null }>(sql`
     select id, full_name, stage::text, source, branch_id from leads where phone = ${phone} order by created_at desc limit 1`);
-  const [st] = await db.execute<{ id: number; full_name: string }>(sql`select id, full_name from students where phone = ${phone} or parent_phone = ${phone} limit 1`);
+  const [st] = await db.execute<{ full_name: string }>(sql`
+    select full_name from students where (phone = ${phone} or parent_phone = ${phone}) ${scope.id ? sql`and (branch_id = ${scope.id} or branch_id is null)` : sql``} limit 1`);
   // Boshqa filial lidining tafsiloti ko'rsatilmaydi — faqat "bor" degan belgi
   const visible = l && (!scope.id || l.branch_id === scope.id || l.branch_id === null);
   return {
-    lead: l ? (visible ? { id: l.id, name: l.full_name, stage: l.stage, source: l.source } : { id: null, name: 'boshqa filialda', stage: l.stage, source: l.source }) : null,
+    lead: l ? (visible ? { id: l.id, name: l.full_name, stage: l.stage, source: l.source } : { id: null, name: 'boshqa filialda', stage: '', source: '—' }) : null,
     student: st ? st.full_name : null,
   };
 }

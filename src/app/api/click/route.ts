@@ -1,3 +1,4 @@
+import { ipAllowed, requestIp } from '@/lib/ip-allow';
 /**
  * Click SHOP API. Kabinetda Prepare URL ham, Complete URL ham: https://<sayt>/api/click
  * Kerakli o'zgaruvchilar: CLICK_SERVICE_ID, CLICK_MERCHANT_ID, CLICK_SECRET_KEY
@@ -17,6 +18,8 @@ export const dynamic = 'force-dynamic';
 const md5 = (s: string) => createHash('md5').update(s).digest('hex');
 
 export async function POST(req: Request) {
+  // Ixtiyoriy: faqat Click serverlari IP manzillaridan (CLICK_ALLOWED_IPS)
+  if (!ipAllowed(requestIp(req), process.env.CLICK_ALLOWED_IPS)) return new Response('Forbidden', { status: 403 });
   const cfg = clickConfig();
   const fd = await req.formData().catch(() => null);
   const f = (k: string) => (fd?.get(k) ?? '').toString();

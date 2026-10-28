@@ -106,6 +106,9 @@ export default async function AcademyLayout({ children }: { children: ReactNode 
             <Link href="/akademiya#kurslar" className="block text-white/85 hover:text-white">
               Barcha kurslar
             </Link>
+            <Link href="/akademiya/yutuqlar" className="block text-white/85 hover:text-white">
+              O&apos;quvchilar yutuqlari
+            </Link>
             <Link href="/akademiya/kabinet" className="block text-white/85 hover:text-white">
               Shaxsiy kabinet
             </Link>

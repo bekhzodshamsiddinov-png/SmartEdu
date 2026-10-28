@@ -67,10 +67,12 @@ export async function metaSelectPage(pageId: string) {
     await saveMeta(
       {
         secret: { appSecret: secret.appSecret, pageToken: p.token },
-        info: { pageId: p.id, pageName: p.name, igName: p.ig, subscribed, forms: forms.map((f) => ({ ...f, branchId: null, courseId: null })), connectedAt: new Date().toISOString(), lastError: warn },
+        info: { pageId: p.id, pageName: p.name, igName: p.ig, subscribed, forms: forms.map((f) => ({ ...f, branchId: null, courseId: null })), connectedAt: new Date().toISOString(), lastError: warn, tokenExpired: false },
       },
       u.id,
     );
+    // Oldingi ulanishda xato bo'lib qolgan lidlar yangi token bilan qayta urinadi
+    await db.execute(sql`update meta_leads set status = 'kutilmoqda', attempts = 0, processed_at = null where status = 'xato'`);
     await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: 'Meta: sahifa ulandi', detail: `${p.name}${p.ig ? ` (@${p.ig})` : ''}`, ip: await clientIp() });
     return { message: warn ? `Sahifa ulandi, lekin: ${warn}` : `${p.name} ulandi. ${forms.length} ta forma topildi.` };
   });
@@ -105,6 +107,7 @@ export async function metaSyncNow() {
     await boss();
     const { secret, info } = await loadMeta();
     if (!secret?.pageToken || !info.pageId) throw new Error('Avval sahifani ulang.');
+    if (info.tokenExpired) throw new Error("Meta tokeni eskirgan — «Qayta ulash» tugmasi bilan ulanishni yangilang.");
     const r = await syncRecent(24 * 7);
     const after = await loadMeta();
     if (after.info.lastError) throw new Error(after.info.lastError);
@@ -133,7 +136,7 @@ export async function metaDisconnect() {
 export async function metaRetry(id: number) {
   return run(async () => {
     await boss();
-    await db.execute(sql`update meta_leads set status = 'kutilmoqda', attempts = 0, error = null where id = ${id} and status = 'xato'`);
+    await db.execute(sql`update meta_leads set status = 'kutilmoqda', attempts = 0, error = null, processed_at = null where id = ${id} and status = 'xato'`);
     const { processPending } = await import('@/lib/meta');
     await processPending(5);
     return { message: 'Qayta urinildi' };

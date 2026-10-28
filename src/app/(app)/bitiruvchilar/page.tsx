@@ -27,5 +27,5 @@ export default async function GraduatesPage() {
     where s.status = 'bitirgan' ${andBranch('s.branch_id', scope.id)}
       ${mine ? sql`and exists (select 1 from enrollments e join groups g on g.id = e.group_id where e.student_id = s.id and (g.teacher_id = ${user.id} or g.support_id = ${user.id}))` : sql``}
     order by s.graduated_at desc nulls last`);
-  return <GraduatesView rows={[...rows]} showIncome={showIncome} contactDays={s.alumniContactDays || 90} canAddResult={['rahbar', 'admin', 'marketing'].includes(user.role)} />;
+  return <GraduatesView rows={[...rows]} showIncome={showIncome} contactDays={s.alumniContactDays || 90} canAddResult={['rahbar', 'admin'].includes(user.role)} />;
 }
