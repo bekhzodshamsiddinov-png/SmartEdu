@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { db } from '@/db';
 import { users, settings, reasons, type Role } from '@/db/schema';
 import { assertSection, getCurrentUser } from '@/lib/auth';
-import { run, str, req, int } from '@/lib/action';
+import { run, str, req, int, bool } from '@/lib/action';
 import { normalizePhone } from '@/lib/format';
 import { ROLE_LABELS } from '@/lib/roles';
 import { notifyTelegram } from '@/lib/payments';
@@ -299,6 +299,8 @@ export async function saveAutomation(fd: FormData) {
         coinsOnTimePay: clamp('coinsOnTimePay', 0, 1000, 5),
         debtNoticeMin: clamp('debtNoticeMin', 0, 100_000_000, 100000),
         absentTaskAfter: clamp('absentTaskAfter', 0, 10, 2),
+        alumniContactDays: clamp('alumniContactDays', 0, 365, 90),
+        leadAutoAssign: bool(fd, 'leadAutoAssign'),
         updatedAt: new Date(),
       })
       .where(eq(settings.id, 1));

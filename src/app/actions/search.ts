@@ -1,5 +1,5 @@
 'use server';
-import { ilike, or, desc } from 'drizzle-orm';
+import { ilike, or, desc , isNull } from 'drizzle-orm';
 import { db } from '@/db';
 import { students, leads, groups } from '@/db/schema';
 import { getCurrentUser } from '@/lib/auth';
@@ -42,7 +42,7 @@ export async function globalSearch(q: string): Promise<SearchHit[]> {
     const r = await db
       .select({ id: leads.id, n: leads.fullName, p: leads.phone })
       .from(leads)
-      .where(and(or(ilike(leads.fullName, term), digits.length >= 3 ? ilike(leads.phone, `%${digits}%`) : undefined), B ? eq(leads.branchId, B) : undefined))
+      .where(and(or(ilike(leads.fullName, term), digits.length >= 3 ? ilike(leads.phone, `%${digits}%`) : undefined), B ? or(eq(leads.branchId, B), isNull(leads.branchId)) : undefined))
       .orderBy(desc(leads.id))
       .limit(5);
     out.push(...r.map((s) => ({ kind: 'l', kindLabel: 'Lid', id: s.id, title: s.n, sub: s.p, href: `/lidlar?id=${s.id}` })));

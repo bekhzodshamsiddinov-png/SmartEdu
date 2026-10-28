@@ -67,6 +67,10 @@ export const settings = pgTable('settings', {
   chargeAbsent: boolean('charge_absent').notNull().default(true),
   /** Oylik hisobda o'quvchi oy o'rtasida qo'shilsa, qolgan darslarga mos qisman yechish */
   prorateFirstMonth: boolean('prorate_first_month').notNull().default(false),
+  /** Avtomatik kelgan lidlar sotuvchilarga navbat bilan biriktiriladi */
+  leadAutoAssign: boolean('lead_auto_assign').notNull().default(true),
+  /** Bitiruvchi bilan necha kunda bir aloqa qilish kerak (eslatma vazifasi) */
+  alumniContactDays: integer('alumni_contact_days').notNull().default(90),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
 
@@ -308,10 +312,93 @@ export const leads = pgTable(
     lostReason: text('lost_reason'),
     note: text('note'),
     studentId: integer('student_id'),
+    /** Reklama kampaniyasi (Meta: campaign_name, sayt: utm_campaign, qo'lda: erkin matn) */
+    campaign: text('campaign'),
+    /** Aniq reklama / video (Meta: ad_name, sayt: utm_content) */
+    ad: text('ad'),
+    /** Meta leadgen_id kabi tashqi identifikator — bir lid ikki marta tushmasin */
+    externalId: text('external_id'),
+    /** Tavsiya qilgan o'quvchi yoki bitiruvchi */
+    referredByStudentId: integer('referred_by_student_id').references(() => students.id, { onDelete: 'set null' }),
+    createdById: integer('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+    /** Necha marta murojaat qilgan (birinchi + takroriylar) */
+    touches: integer('touches').notNull().default(1),
+    lastTouchAt: timestamp('last_touch_at', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('leads_stage_idx').on(t.stage)],
+  (t) => [
+    index('leads_stage_idx').on(t.stage),
+    index('leads_phone_idx').on(t.phone),
+    index('leads_source_idx').on(t.source, t.createdAt),
+    uniqueIndex('leads_external_uq').on(t.externalId),
+  ],
+);
+
+/** Har bir murojaat: birinchi kelishi va keyingi takroriylari (qaysi kanal, qaysi reklama) */
+export const leadTouches = pgTable(
+  'lead_touches',
+  {
+    id: serial('id').primaryKey(),
+    leadId: integer('lead_id')
+      .notNull()
+      .references(() => leads.id, { onDelete: 'cascade' }),
+    source: text('source').notNull(),
+    campaign: text('campaign'),
+    ad: text('ad'),
+    /** Qanday tushdi: 'qolda' | 'meta' | 'uitc' | 'ariza' */
+    via: text('via').notNull(),
+    detail: text('detail'),
+    createdById: integer('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('lead_touches_lead_idx').on(t.leadId), index('lead_touches_src_idx').on(t.source, t.createdAt)],
+);
+
+/** Reklama xarajati: oy, kanal, kampaniya bo'yicha (lid narxi va o'quvchi narxini hisoblash uchun) */
+export const adSpend = pgTable(
+  'ad_spend',
+  {
+    id: serial('id').primaryKey(),
+    month: text('month').notNull(),
+    source: text('source').notNull(),
+    campaign: text('campaign').notNull().default(''),
+    branchId: integer('branch_id').references(() => branches.id, { onDelete: 'cascade' }),
+    amount: integer('amount').notNull(),
+    note: text('note'),
+    createdById: integer('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('ad_spend_month_idx').on(t.month)],
+);
+
+/** Tashqi xizmatlar ulanishi. `secret` — shifrlangan (AES-256-GCM) kalitlar, `info` — maxfiy bo'lmagan holat */
+export const integrations = pgTable('integrations', {
+  key: text('key').primaryKey(),
+  secret: text('secret'),
+  info: jsonb('info').$type<Record<string, unknown>>().notNull().default({}),
+  updatedById: integer('updated_by_id').references(() => users.id, { onDelete: 'set null' }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Meta (Instagram/Facebook) lid formalaridan kelgan har bir lid — qayta urinish va takrorni oldini olish uchun */
+export const metaLeads = pgTable(
+  'meta_leads',
+  {
+    id: serial('id').primaryKey(),
+    leadgenId: text('leadgen_id').notNull().unique(),
+    pageId: text('page_id'),
+    formId: text('form_id'),
+    adId: text('ad_id'),
+    /** 'kutilmoqda' | 'qabul' | 'xato' */
+    status: text('status').notNull().default('kutilmoqda'),
+    attempts: integer('attempts').notNull().default(0),
+    error: text('error'),
+    leadId: integer('lead_id').references(() => leads.id, { onDelete: 'set null' }),
+    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+  },
+  (t) => [index('meta_leads_status_idx').on(t.status)],
 );
 
 /** Qo'ng'iroqlar, izohlar, ota-onaga yuborilgan hisobotlar */
@@ -358,9 +445,18 @@ export const results = pgTable(
     amount: integer('amount'),
     date: date('date').notNull(),
     note: text('note'),
+    /** Egallagan o'rni: '1', '2', '3', 'finalist', 'ishtirok' */
+    place: text('place'),
+    /** Daraja: 'markaz' | 'tuman' | 'viloyat' | 'respublika' | 'xalqaro' */
+    level: text('level'),
+    /** Isbot havolasi (Play Market, YouTube, sertifikat) */
+    link: text('link'),
+    /** Ota-ona/o'quvchi roziligi bilan saytdagi "Yutuqlar" sahifasida ko'rsatiladi */
+    isPublic: boolean('is_public').notNull().default(false),
+    createdById: integer('created_by_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('results_student_idx').on(t.studentId)],
+  (t) => [index('results_student_idx').on(t.studentId), index('results_date_idx').on(t.date)],
 );
 
 export const graduates = pgTable('graduates', {
@@ -378,8 +474,31 @@ export const graduates = pgTable('graduates', {
   referrals: integer('referrals').notNull().default(0),
   inTelegramGroup: boolean('in_telegram_group').notNull().default(false),
   note: text('note'),
+  /** Qaysi sohada: Frontend, AI, SMM, dizayn... */
+  field: text('field'),
+  /** Telegram / Instagram profili */
+  socials: text('socials'),
+  /** Keyingi aloqa sanasi (eslatma vazifasi shu kuni tushadi) */
+  nextContactAt: date('next_contact_at'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Bitiruvchi bilan har bir aloqa (qo'ng'iroq, uchrashuv, tadbir) */
+export const graduateContacts = pgTable(
+  'graduate_contacts',
+  {
+    id: serial('id').primaryKey(),
+    studentId: integer('student_id')
+      .notNull()
+      .references(() => students.id, { onDelete: 'cascade' }),
+    date: date('date').notNull(),
+    channel: text('channel').notNull(),
+    note: text('note'),
+    byId: integer('by_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('graduate_contacts_student_idx').on(t.studentId)],
+);
 
 export const tasks = pgTable(
   'tasks',

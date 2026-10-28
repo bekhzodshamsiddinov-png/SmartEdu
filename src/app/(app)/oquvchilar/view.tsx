@@ -1,4 +1,5 @@
 'use client';
+import { ResultForm, ResultList, type ResultRow } from '@/components/results';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Search, UserPlus, Users, Wallet, Pencil, ArrowRightLeft, Phone, Plus, Trash2, Download, LogOut as LeaveIcon, Receipt, Link2, FileText, Award, Coins, Copy, Ticket } from 'lucide-react';
@@ -8,7 +9,7 @@ import { Drawer, Modal } from '@/components/modal';
 import { ActionButton, ActionForm } from '@/components/action-form';
 import { MoneyInput } from '@/components/money-input';
 import { EditStudentForm, GroupSelect, NewStudentForm, PaymentForm, StatusForm, type GroupOpt } from '@/components/forms';
-import { addGrade, addNote, addResult, deleteStudent, endEnrollment, enroll, updateFee, updateReturn } from '@/app/actions/students';
+import { addGrade, addNote, deleteStudent, endEnrollment, enroll, updateFee, updateReturn } from '@/app/actions/students';
 import { CancelPaymentButton } from '@/components/cancel-payment';
 import { createCabinetLink, giveCoins, revokeCabinetLink } from '@/app/actions/cabinet';
 import { useToast } from '@/components/toast';
@@ -39,7 +40,7 @@ export type Profile = {
   attendance: { id: number; date: string; status: string; reason: string | null; group: string }[];
   grades: { id: number; period: string; score: number; comment: string | null; by: string | null }[];
   notes: { id: number; kind: string; text: string; createdAt: string; by: string | null }[];
-  results: { id: number; type: string; title: string; amount: number | null; date: string; note: string | null }[];
+  results: ResultRow[];
   balance: { charged: number; paid: number; balance: number; fee: number };
   attRate: number | null;
   ledger: { id: number; date: string; kind: string; amount: number; note: string | null; grp: string | null; status: string | null }[];
@@ -752,26 +753,8 @@ function ProfileDrawer({ p, groups, role, showMoney, onClose }: { p: Profile; gr
         )}
 
         {tab === 'natija' && (
-          <Section title="Yutuqlari" action={role !== 'bugalter' && <Button size="sm" variant="ghost" onClick={() => setModal('result')}><Plus className="h-4 w-4" /> Natija qo&apos;shish</Button>}>
-            {p.results.length === 0 ? (
-              <p className="px-4 py-4 text-sm text-fg-muted">Olimpiada, birinchi zakaz, ishga kirish va portfolio proyektlarini shu yerga yozing.</p>
-            ) : (
-              <ul className="divide-y divide-line">
-                {p.results.map((r) => (
-                  <li key={r.id} className="px-4 py-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm font-bold">{r.title}</span>
-                      <Badge tone="brand">{r.type}</Badge>
-                    </div>
-                    <div className="mt-0.5 text-xs text-fg-muted">
-                      {fmtDate(r.date)}
-                      {r.amount ? `, ${money(r.amount)}` : ''}
-                      {r.note ? `, ${r.note}` : ''}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
+          <Section title="Yutuqlari" action={role !== 'bugalter' && role !== 'sotuv' && <Button size="sm" variant="ghost" onClick={() => setModal('result')}><Plus className="h-4 w-4" /> Yutuq qo&apos;shish</Button>}>
+            <ResultList rows={p.results} canEdit={['rahbar', 'admin', 'marketing'].includes(role)} />
           </Section>
         )}
       </div>
@@ -842,30 +825,8 @@ function ProfileDrawer({ p, groups, role, showMoney, onClose }: { p: Profile; gr
           </Field>
         </ActionForm>
       </Modal>
-      <Modal open={modal === 'result'} onClose={() => setModal(null)} title="Natija qo'shish" size="sm">
-        <ActionForm action={addResult.bind(null, s.id)} onDone={() => setModal(null)} onCancel={() => setModal(null)}>
-          <Field label="Turi">
-            <select name="type" className="field" required>
-              {RESULT_TYPES.map((r) => (
-                <option key={r}>{r}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Natija">
-            <input name="title" className="field" placeholder="Masalan: Viloyat olimpiadasi, 2-o'rin" required />
-          </Field>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Sana">
-              <input type="date" name="date" defaultValue={today()} className="field" />
-            </Field>
-            <Field label="Daromad (agar bo'lsa)">
-              <MoneyInput name="amount" />
-            </Field>
-          </div>
-          <Field label="Izoh">
-            <input name="note" className="field" />
-          </Field>
-        </ActionForm>
+      <Modal open={modal === 'result'} onClose={() => setModal(null)} title="Yutuq qo'shish" sub={s.fullName} size="sm">
+        <ResultForm studentId={s.id} onDone={() => setModal(null)} />
       </Modal>
       <Modal open={typeof modal === 'object' && modal !== null} onClose={() => setModal(null)} title="Oylik to'lovni o'zgartirish" size="sm">
         {typeof modal === 'object' && modal !== null && (

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { after } from 'next/server';
 import { runDaily } from '@/lib/jobs';
+import { metaHeartbeat } from '@/lib/meta';
 import { requireUser } from '@/lib/auth';
 import { can, ROLE_LABELS } from '@/lib/roles';
 import { NAV } from '@/components/shell/nav';
@@ -18,6 +19,12 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       await runDaily();
     } catch {
       // fon ishi sahifaga ta'sir qilmaydi
+    }
+    try {
+      // Instagram/Facebook lidlari: webhook o'tkazib yuborganlarini zaxira sifatida tekshirish
+      await metaHeartbeat();
+    } catch {
+      // ulanmagan yoki Meta javob bermadi — keyingi safar
     }
   });
   const s = await getSettings();

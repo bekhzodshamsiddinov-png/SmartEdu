@@ -1,9 +1,9 @@
 'use server';
-import { and, eq, gt, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '@/db';
-import { branches, courses, leads } from '@/db/schema';
+import { branches, courses } from '@/db/schema';
 import { normalizePhone } from '@/lib/format';
-import { LEAD_SOURCES } from '@/lib/constants';
+import { canonicalSource, clean, ingestLead } from '@/lib/leads-ingest';
 import { clientIp, overLimit } from '@/lib/security';
 import { notifyTelegram } from '@/lib/payments';
 
@@ -25,17 +25,18 @@ export async function submitApplication(_: ApplyState, fd: FormData): Promise<Ap
     const phone = normalizePhone(String(fd.get('phone') ?? ''));
     if (!/^998\d{9}$/.test(phone)) return { error: "Telefon raqamni to'g'ri kiriting: 90 123 45 67." };
     const rawSource = String(fd.get('source') ?? '');
-    const source = LEAD_SOURCES.find((x) => x.toLowerCase() === rawSource.toLowerCase()) ?? 'Sayt';
+    const source = canonicalSource(rawSource, 'Akademiya sayti');
     const courseId = Number(fd.get('courseId')) || null;
     const course = courseId ? (await db.select({ id: courses.id, name: courses.name }).from(courses).where(and(eq(courses.id, courseId), eq(courses.active, true))))[0] : null;
     const branchId = Number(fd.get('branchId')) || null;
     const branch = branchId ? (await db.select({ id: branches.id }).from(branches).where(and(eq(branches.id, branchId), eq(branches.active, true))))[0] : null;
     const note = String(fd.get('note') ?? '').trim().slice(0, 300) || null;
-    // Bir raqamdan 24 soat ichida takroriy ariza — yangi lid emas
-    const [dup] = await db.select({ id: leads.id }).from(leads).where(and(eq(leads.phone, phone), gt(leads.createdAt, sql`now() - interval '24 hours'`)));
-    if (dup) return { ok: true };
-    await db.insert(leads).values({ fullName: name, phone, source, courseId: course?.id ?? null, branchId: branch?.id ?? null, note: note ? `Saytdan ariza: ${note}` : 'Saytdan ariza' });
-    await notifyTelegram(`📝 Yangi ariza: ${name}, +${phone}\nManba: ${source}${course ? `\nKurs: ${course.name}` : ''}`);
+    const r = await ingestLead({
+      name, phone, source, courseId: course?.id ?? null, branchId: branch?.id ?? null, via: 'ariza',
+      campaign: clean(fd.get('utm_campaign'), 120), ad: clean(fd.get('utm_content'), 120),
+      note: note ? `Saytdan ariza: ${note}` : 'Saytdan ariza',
+    });
+    if (!r.duplicate) await notifyTelegram(`📝 Yangi ariza: ${name}, +${phone}\nManba: ${source}${course ? `\nKurs: ${course.name}` : ''}`);
     return { ok: true };
   } catch {
     return { error: "Xatolik yuz berdi. Iltimos, qayta urinib ko'ring yoki bizga qo'ng'iroq qiling." };

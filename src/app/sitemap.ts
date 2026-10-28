@@ -13,6 +13,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   return [
     { url: `${url}/akademiya`, lastModified: last, changeFrequency: 'weekly', priority: 1 },
     { url: `${url}/akademiya/ariza`, changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${url}/akademiya/yutuqlar`, changeFrequency: 'weekly', priority: 0.7 },
     ...courses.map((c) => ({ url: `${url}/akademiya/kurs/${c.slug}`, lastModified: c.updated_at, changeFrequency: 'weekly' as const, priority: 0.9 })),
   ];
 }

@@ -6,5 +6,5 @@ import { settings } from '@/db/schema';
 
 export const getSettings = cache(async () => {
   const [s] = await db.select().from(settings).where(eq(settings.id, 1)).limit(1);
-  return s ?? { id: 1, centerName: 'United IT Clubs', phone: null, address: null, paymentDueDay: 5, salaryDay: 10, reservePercent: 10, payCard: null, payCardHolder: null, telegram: null, instagram: null, academyTagline: null, billingDefault: 'oylik', chargeAbsent: true, prorateFirstMonth: false, contractTemplate: null, coinsPerLesson: 1, coinsOnTimePay: 5, debtNoticeMin: 100000, absentTaskAfter: 2, updatedAt: null };
+  return s ?? { id: 1, centerName: 'United IT Clubs', phone: null, address: null, paymentDueDay: 5, salaryDay: 10, reservePercent: 10, payCard: null, payCardHolder: null, telegram: null, instagram: null, academyTagline: null, billingDefault: 'oylik', chargeAbsent: true, prorateFirstMonth: false, contractTemplate: null, coinsPerLesson: 1, coinsOnTimePay: 5, debtNoticeMin: 100000, absentTaskAfter: 2, leadAutoAssign: true, alumniContactDays: 90, updatedAt: null };
 });

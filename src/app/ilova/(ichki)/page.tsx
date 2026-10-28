@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowRight, CalendarClock, Coins, Flame, MapPin, QrCode, Star, Ticket, TrendingUp, Wallet } from 'lucide-react';
+import { ArrowRight, CalendarClock, Coins, Flame, MapPin, Medal, QrCode, Star, Ticket, TrendingUp, Wallet } from 'lucide-react';
+import { RESULT_META, RESULT_PLACES } from '@/lib/constants';
 import { currentChild } from '@/lib/family';
 import { childOverview } from '@/lib/family-data';
 import { getSettings } from '@/lib/settings';
@@ -123,6 +124,29 @@ export default async function Home() {
           </div>
         )}
       </section>
+
+      {/* Yutuqlar */}
+      {o.wins.length > 0 && (
+        <section className="rounded-[24px] bg-white p-4">
+          <h2 className="mb-2 font-extrabold">{first}ning yutuqlari</h2>
+          <ul className="space-y-2">
+            {o.wins.map((w, i) => (
+              <li key={i} className="flex items-center gap-3 rounded-2xl bg-[#F2F4F9] p-3">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-white" style={{ background: RESULT_META[w.type]?.color ?? '#8C9A97' }}>
+                  <Medal className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-bold">{w.title}</span>
+                  <span className="block text-xs text-[#5B6478]">
+                    {w.type}
+                    {RESULT_PLACES.find((p) => p.k === w.place) ? `, ${RESULT_PLACES.find((p) => p.k === w.place)!.l}` : ''}, {fmtShort(w.date)}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* Baholar */}
       {o.grades.length > 0 && (

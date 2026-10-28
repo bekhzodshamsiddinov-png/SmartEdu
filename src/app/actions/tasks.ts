@@ -70,27 +70,3 @@ export async function submitReport(fd: FormData) {
   });
 }
 
-export async function saveGraduate(studentId: number, fd: FormData) {
-  return run(async () => {
-    const u = await assertSection('graduates');
-    await assertBranch('student', studentId);
-    const [st] = await db.select({ status: students.status, name: students.fullName }).from(students).where(eq(students.id, studentId));
-    if (!st || st.status !== 'bitirgan') throw new Error("Bu o'quvchi bitiruvchi emas.");
-    const v = {
-      workplace: str(fd, 'workplace'),
-      position: str(fd, 'position'),
-      monthlyIncome: int(fd, 'monthlyIncome'),
-      freelance: bool(fd, 'freelance'),
-      studyingAt: str(fd, 'studyingAt'),
-      lastContactAt: str(fd, 'lastContactAt') || today(),
-      referrals: int(fd, 'referrals') ?? 0,
-      inTelegramGroup: bool(fd, 'inTelegramGroup'),
-      note: str(fd, 'note'),
-      updatedAt: new Date(),
-    };
-    if (v.monthlyIncome !== null && (v.monthlyIncome < 0 || v.monthlyIncome > 1_000_000_000)) throw new Error("Daromad noto'g'ri.");
-    await db.insert(graduates).values({ studentId, ...v }).onConflictDoUpdate({ target: graduates.studentId, set: v });
-    void u;
-    return { message: "Bitiruvchi ma'lumotlari saqlandi" };
-  });
-}

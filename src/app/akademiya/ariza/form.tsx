@@ -3,7 +3,7 @@ import { useActionState } from 'react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { submitApplication } from '@/app/actions/apply';
 
-export function ApplyForm({ source, courses, branches, course, branch }: { source: string; courses: { id: number; name: string }[]; branches: { id: number; name: string }[]; course: number | null; branch: number | null }) {
+export function ApplyForm({ source, campaign, ad, courses, branches, course, branch }: { source: string; campaign?: string; ad?: string; courses: { id: number; name: string }[]; branches: { id: number; name: string }[]; course: number | null; branch: number | null }) {
   const [state, action, pending] = useActionState(submitApplication, undefined);
   if (state?.ok)
     return (
@@ -16,6 +16,8 @@ export function ApplyForm({ source, courses, branches, course, branch }: { sourc
   return (
     <form action={action} className="mt-6 space-y-4">
       <input type="hidden" name="source" value={source} />
+      {campaign && <input type="hidden" name="utm_campaign" value={campaign} />}
+      {ad && <input type="hidden" name="utm_content" value={ad} />}
       {/* Bot tuzog'i: odam ko'rmaydi */}
       <div aria-hidden className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
         <label>

@@ -13,7 +13,40 @@ export const STAGE_INDEX: Record<LeadStage, number> = {
   yangi: 0, boglanildi: 1, sinov_yozildi: 2, sinov_keldi: 3, tolov_qildi: 4, rad_etdi: -1,
 };
 
-export const LEAD_SOURCES = ['Instagram', 'Target', 'Telegram', 'Tavsiya', 'Ofisga keldi', "Qo'ng'iroq", 'Maktab', 'Bitiruvchi', 'Sayt', 'Boshqa'];
+/** Lid kanallari. Avtomatik kanallar (target, sayt) tizim o'zi belgilaydi; qolganlari qo'lda tanlanadi */
+export const LEAD_SOURCES = [
+  'Instagram target',
+  'Facebook target',
+  'Instagram',
+  'Telegram',
+  'uitc.uz',
+  'Akademiya sayti',
+  'Tavsiya',
+  'Bitiruvchi',
+  'Ofisga keldi',
+  "Qo'ng'iroq",
+  'Maktab',
+  'Boshqa',
+];
+/** Kanal rangi (filtr, hisobot, kartochka) */
+export const SOURCE_COLOR: Record<string, string> = {
+  'Instagram target': '#D6246E',
+  'Facebook target': '#1877F2',
+  Instagram: '#E1306C',
+  Telegram: '#229ED9',
+  'uitc.uz': '#0B78A6',
+  'Akademiya sayti': '#0E7C6B',
+  Tavsiya: '#C98A00',
+  Bitiruvchi: '#7A4FD6',
+  'Ofisga keldi': '#0C1631',
+  "Qo'ng'iroq": '#5B6478',
+  Maktab: '#2F9E44',
+  Boshqa: '#8C9A97',
+};
+/** Tavsiya qiluvchi o'quvchini so'raydigan kanallar */
+export const REFERRAL_SOURCES = ['Tavsiya', 'Bitiruvchi'];
+/** Lid qanday tushgani */
+export const TOUCH_VIA: Record<string, string> = { qolda: "Qo'lda kiritildi", meta: 'Instagram/Facebook formasi', uitc: 'uitc.uz formasi', ariza: 'Akademiya ariza formasi' };
 
 export const STUDENT_STATUS: Record<StudentStatus, { label: string; tone: Tone }> = {
   faol: { label: 'Faol', tone: 'good' },
@@ -45,7 +78,52 @@ export const PAY_METHODS: { key: 'naqd' | 'click' | 'payme' | 'karta' | 'bank'; 
 ];
 export const PAY_METHOD_LABEL: Record<string, string> = Object.fromEntries(PAY_METHODS.map((m) => [m.key, m.label]));
 
-export const RESULT_TYPES = ['Olimpiada', 'Birinchi zakaz', 'Ishga kirdi', 'Portfolio proyekt', 'Sertifikat', 'Tanlov', 'Boshqa'];
+export const RESULT_TYPES = [
+  'Musobaqa',
+  'Olimpiada',
+  'Tanlov',
+  'Play Market ilova',
+  'Loyiha sotdi',
+  'Birinchi zakaz',
+  'YouTube daromad',
+  'Ishga kirdi',
+  'Startap',
+  'Grant',
+  'Sertifikat',
+  'Portfolio proyekt',
+  'Boshqa',
+];
+/** Turi bo'yicha belgi rangi va pul summasi so'raladimi */
+export const RESULT_META: Record<string, { color: string; money?: boolean; place?: boolean }> = {
+  Musobaqa: { color: '#D93A08', place: true },
+  Olimpiada: { color: '#D93A08', place: true },
+  Tanlov: { color: '#C98A00', place: true },
+  'Play Market ilova': { color: '#2F9E44' },
+  'Loyiha sotdi': { color: '#0E7C6B', money: true },
+  'Birinchi zakaz': { color: '#0E7C6B', money: true },
+  'YouTube daromad': { color: '#E02424', money: true },
+  'Ishga kirdi': { color: '#1878AE', money: true },
+  Startap: { color: '#7A4FD6' },
+  Grant: { color: '#C98A00', money: true },
+  Sertifikat: { color: '#5B6478' },
+  'Portfolio proyekt': { color: '#0B78A6' },
+  Boshqa: { color: '#8C9A97' },
+};
+export const RESULT_PLACES = [
+  { k: '1', l: '1-o\'rin' },
+  { k: '2', l: '2-o\'rin' },
+  { k: '3', l: '3-o\'rin' },
+  { k: 'finalist', l: 'Finalist' },
+  { k: 'ishtirok', l: 'Ishtirok etdi' },
+];
+export const RESULT_LEVELS = [
+  { k: 'markaz', l: 'Markaz ichida' },
+  { k: 'tuman', l: 'Tuman' },
+  { k: 'viloyat', l: 'Viloyat' },
+  { k: 'respublika', l: 'Respublika' },
+  { k: 'xalqaro', l: 'Xalqaro' },
+];
+export const ALUMNI_CHANNELS = ["Qo'ng'iroq", 'Telegram', 'Uchrashuv', 'Tadbir', 'Boshqa'];
 
 export const ATT_LABEL: Record<string, { label: string; tone: Tone; short: string }> = {
   keldi: { label: 'Keldi', tone: 'good', short: 'K' },

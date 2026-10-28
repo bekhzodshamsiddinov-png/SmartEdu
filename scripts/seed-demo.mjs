@@ -18,7 +18,7 @@ const today = tz(new Date());
 const addDays = (s, n) => { const d = s instanceof Date ? new Date(s) : new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const rnd = (a) => a[Math.floor(Math.random() * a.length)];
 
-await sql`truncate student_subscriptions, subscription_plans, coins, outbox, sales_plans, rooms, job_runs, salary_payouts, staff_adjustments, cash_transfers, cashboxes, charges, auth_attempts, audit_log, payme_transactions, branches, lesson_progress, course_orders, promo_codes, learners, course_lessons, course_modules, online_courses, staff_reports, tasks, graduates, results, grades, notes, leads, reconciliations, transactions, payments, attendance, lessons, enrollments, students, groups, courses, users, settings restart identity cascade`;
+await sql`truncate graduate_contacts, lead_touches, ad_spend, integrations, meta_leads, student_subscriptions, subscription_plans, coins, outbox, sales_plans, rooms, job_runs, salary_payouts, staff_adjustments, cash_transfers, cashboxes, charges, auth_attempts, audit_log, payme_transactions, branches, lesson_progress, course_orders, promo_codes, learners, course_lessons, course_modules, online_courses, staff_reports, tasks, graduates, results, grades, notes, leads, reconciliations, transactions, payments, attendance, lessons, enrollments, students, groups, courses, users, settings restart identity cascade`;
 const hash = await bcrypt.hash('123456', 10);
 await sql`insert into settings (id, center_name) values (1, 'United IT Clubs')`;
 const [br1] = await sql`insert into branches (name, address) values ('Davlatobod filiali', 'Davlatobod tumani') returning id`;
@@ -61,7 +61,7 @@ for (const g of groups) {
     const name = `${first[n % first.length]} ${last[(n * 7) % last.length]}${first[n % first.length].endsWith('a') && !last[(n * 7) % last.length].endsWith('a') ? 'a' : ''}`;
     n++;
     const start = addDays(g.start_date, Math.floor(Math.random() * 10));
-    const [s] = await sql`insert into students (branch_id, full_name, phone, parent_name, parent_phone, joined_at, source, school) values (${g.branch_id}, ${name}, ${'99890' + String(1000000 + n * 7919).slice(0, 7)}, ${'Ota-onasi'}, ${'99893' + String(2000000 + n * 3571).slice(0, 7)}, ${start}, ${rnd(['Instagram', 'Tavsiya', 'Target', 'Ofisga keldi'])}, ${rnd(['12-maktab', '5-maktab', 'Litsey', '21-maktab'])}) returning id`;
+    const [s] = await sql`insert into students (branch_id, full_name, phone, parent_name, parent_phone, joined_at, source, school) values (${g.branch_id}, ${name}, ${'99890' + String(1000000 + n * 7919).slice(0, 7)}, ${'Ota-onasi'}, ${'99893' + String(2000000 + n * 3571).slice(0, 7)}, ${start}, ${rnd(['Instagram', 'Tavsiya', 'Instagram target', 'Ofisga keldi'])}, ${rnd(['12-maktab', '5-maktab', 'Litsey', '21-maktab'])}) returning id`;
     const [e] = await sql`insert into enrollments (student_id, group_id, monthly_fee, start_date) values (${s.id}, ${g.id}, ${price[g.course_id]}, ${start}) returning id`;
     studentIds.push({ id: s.id, g: g.id, e: e.id, fee: price[g.course_id], start, b: g.branch_id });
   }
@@ -108,7 +108,11 @@ const stages = ['yangi', 'yangi', 'boglanildi', 'sinov_yozildi', 'sinov_keldi', 
 const idx = { yangi: 0, boglanildi: 1, sinov_yozildi: 2, sinov_keldi: 3, tolov_qildi: 4, rad_etdi: 1 };
 for (let i = 0; i < 18; i++) {
   const st = stages[i % stages.length];
-  await sql`insert into leads (branch_id, full_name, phone, source, course_id, stage, max_stage, assigned_to_id, trial_date, lost_reason, created_at, updated_at) values (${i % 3 ? br1.id : br2.id}, ${first[(i * 3) % first.length] + ' ' + last[i % last.length]}, ${'99897' + String(3000000 + i * 4111).slice(0, 7)}, ${rnd(['Instagram', 'Target', 'Telegram', 'Tavsiya', 'Ofisga keldi'])}, ${rnd(courses).id}, ${st}, ${idx[st]}, ${sales}, ${st === 'sinov_yozildi' ? addDays(today, 2) : null}, ${st === 'rad_etdi' ? 'Narx qimmat' : null}, ${new Date(Date.now() - i * 1.3 * 86400000)}, ${new Date(Date.now() - i * 86400000)})`;
+  const src = ['Instagram target', 'Instagram', 'Telegram', 'Tavsiya', 'Ofisga keldi', 'uitc.uz'][i % 6];
+  const camp = src === 'Instagram target' ? ['Oktabr AI kursi', 'Kompyuter savodxonligi'][i % 2] : null;
+  const created = new Date(Date.now() - i * 1.3 * 86400000);
+  const [ld] = await sql`insert into leads (branch_id, full_name, phone, source, campaign, ad, course_id, stage, max_stage, assigned_to_id, trial_date, lost_reason, created_at, updated_at, last_touch_at) values (${i % 3 ? br1.id : br2.id}, ${first[(i * 3) % first.length] + ' ' + last[i % last.length]}, ${'99897' + String(3000000 + i * 4111).slice(0, 7)}, ${src}, ${camp}, ${camp ? 'Video ' + (1 + (i % 3)) : null}, ${rnd(courses).id}, ${st}, ${idx[st]}, ${sales}, ${st === 'sinov_yozildi' ? addDays(today, 2) : null}, ${st === 'rad_etdi' ? 'Narx qimmat' : null}, ${created}, ${new Date(Date.now() - i * 86400000)}, ${created}) returning id`;
+  await sql`insert into lead_touches (lead_id, source, campaign, ad, via, created_at) values (${ld.id}, ${src}, ${camp}, ${camp ? 'Video ' + (1 + (i % 3)) : null}, ${src === 'Instagram target' ? 'meta' : src === 'uitc.uz' ? 'uitc' : 'qolda'}, ${created})`;
 }
 // transactions 6 months
 for (let m = 5; m >= 0; m--) {

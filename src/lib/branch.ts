@@ -26,6 +26,12 @@ export function andBranch(col: SQL | string, id: number | null): SQL {
   return typeof col === 'string' ? sql`and ${sql.raw(col)} = ${id}` : sql`and ${col} = ${id}`;
 }
 
+/** Lidlar uchun: filiali hali aniqlanmagan (saytdan, Instagram'dan kelgan) lidlar har bir filialga ko'rinadi */
+export function andLeadBranch(col: string, id: number | null): SQL {
+  if (!id) return sql``;
+  return sql`and (${sql.raw(col)} = ${id} or ${sql.raw(col)} is null)`;
+}
+
 /** Yangi yozuv uchun filial: tanlangan, aks holda birinchi faol filial */
 export async function branchForNew(): Promise<number | null> {
   const s = await getBranchScope();

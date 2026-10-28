@@ -19,6 +19,7 @@ export const NAV: NavItem[] = [
   { href: '/xabarlar', label: 'Xabarlar', section: 'messages', icon: 'messages' },
   { href: '/onlayn', label: 'Onlayn kurslar', section: 'online', icon: 'play' },
   { href: '/bitiruvchilar', label: 'Bitiruvchilar', section: 'graduates', icon: 'grad' },
+  { href: '/yutuqlar', label: 'Yutuqlar', section: 'students', icon: 'trophy' },
   { href: '/hisobotlar', label: 'Hisobotlar', section: 'reports', icon: 'chart' },
   { href: '/sozlamalar', label: 'Sozlamalar', section: 'settings', icon: 'cog' },
 ];

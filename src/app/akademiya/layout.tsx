@@ -47,6 +47,9 @@ export default async function AcademyLayout({ children }: { children: ReactNode 
             <Link href="/akademiya#kurslar" className="hidden rounded-field px-3 py-2 text-sm font-semibold text-fg-muted hover:text-fg sm:block">
               Kurslar
             </Link>
+            <Link href="/akademiya/yutuqlar" className="hidden rounded-field px-3 py-2 text-sm font-semibold text-fg-muted hover:text-fg sm:block">
+              Yutuqlar
+            </Link>
             {l ? (
               <Link href="/akademiya/kabinet" className="inline-flex h-10 items-center gap-2 rounded-field bg-ink px-4 text-sm font-bold text-white">
                 <span className="grid h-6 w-6 place-items-center rounded-full bg-white/15 text-[11px]">{l.fullName.slice(0, 1).toUpperCase()}</span>

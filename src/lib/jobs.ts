@@ -41,6 +41,35 @@ export async function absentTasks() {
   }
 }
 
+/**
+ * Bitiruvchilar bilan aloqa uzilmasin: belgilangan kun kelsa yoki oxirgi aloqadan N kun o'tsa —
+ * filial administratoriga vazifa. Bir bitiruvchi uchun bir davrda bitta vazifa.
+ */
+export async function alumniTasks() {
+  const s = await getSettings();
+  const n = s.alumniContactDays;
+  if (!n || n < 1) return;
+  const t = today();
+  const rows = await db.execute<{ id: number; name: string; branch_id: number | null; last: string | null; phone: string | null; key: string }>(sql`
+    select s.id, s.full_name name, s.branch_id, gr.last_contact_at::text last, s.phone,
+      coalesce(gr.next_contact_at::text, to_char(coalesce(gr.last_contact_at, s.graduated_at, ${t}::date) + ${n}::int, 'YYYY-MM-DD')) key
+    from students s left join graduates gr on gr.student_id = s.id
+    where s.status = 'bitirgan' and coalesce(s.graduated_at, ${t}::date) <= ${t}::date - 7
+      and (gr.next_contact_at <= ${t} or (gr.next_contact_at is null and coalesce(gr.last_contact_at, s.graduated_at, ${t}::date) <= ${t}::date - ${n}::int))
+    limit 200`);
+  for (const r of rows) {
+    const [who] = await db.execute<{ id: number }>(sql`
+      select id from users where active and role in ('admin','rahbar')
+      order by (role = 'admin' and branch_id is not distinct from ${r.branch_id}) desc, (role = 'admin') desc, id limit 1`);
+    if (!who) continue;
+    await db.execute(sql`
+      insert into tasks (title, description, assignee_id, due_date, priority, auto_key, entity_type, entity_id)
+      values (${`Bitiruvchi bilan aloqa: ${r.name}`}, ${`Oxirgi aloqa: ${r.last ? fmtDate(r.last) : "qayd etilmagan"}. Qayerda o'qiyapti/ishlayapti, daromadi, yangi yutuqlari va tanishlarini so'rang. Natijani «Bitiruvchilar» bo'limida «Aloqa» tugmasi bilan yozing.`},
+        ${who.id}, ${t}, 'orta', ${`alumni:${r.id}:${r.key}`}, 'student', ${r.id})
+      on conflict do nothing`);
+  }
+}
+
 /** Kunlik avtomatik ishlar: vazifalar, tug'ilgan kun, qarz va birinchi dars eslatmalari, xabarlarni yuborish */
 export async function runDaily() {
   const t = today();
@@ -50,6 +79,7 @@ export async function runDaily() {
   }
   const s = await getSettings();
   await absentTasks();
+  await alumniTasks();
   // Tug'ilgan kunlar
   const bd = await db.execute<{ id: number }>(sql`
     select id from students where status in ('faol','xavf') and birth_date is not null

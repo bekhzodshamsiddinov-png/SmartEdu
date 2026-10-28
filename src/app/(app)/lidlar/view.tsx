@@ -1,16 +1,17 @@
 'use client';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Magnet, Phone, Plus, UserPlus, Trash2, Calendar, PhoneCall, Target, MessageSquareQuote, X, Link2, Copy } from 'lucide-react';
+import { Magnet, Phone, Plus, UserPlus, Trash2, Calendar, PhoneCall, Target, MessageSquareQuote, X, Link2, Copy, Search, BarChart3, Repeat, Clock, Megaphone, AlertTriangle } from 'lucide-react';
+import Link from 'next/link';
 import type { LeadStage } from '@/db/schema';
 import { Badge, Button, Card, Field, PageHeader, cn } from '@/components/ui';
 import { Modal, Drawer } from '@/components/modal';
 import { ActionButton, ActionForm } from '@/components/action-form';
 import { NewStudentForm, type GroupOpt } from '@/components/forms';
 import { useToast } from '@/components/toast';
-import { deleteLead, logLeadCall, moveLead, saveLead, saveSalesPlan } from '@/app/actions/leads';
+import { checkLeadPhone, deleteLead, logLeadCall, moveLead, saveLead, saveSalesPlan, searchReferrers } from '@/app/actions/leads';
 import { addNote } from '@/app/actions/students';
-import { CALL_STATUSES, LEAD_SOURCES, LEAD_STAGES, OBJECTION_SCRIPTS } from '@/lib/constants';
+import { CALL_STATUSES, LEAD_SOURCES, LEAD_STAGES, OBJECTION_SCRIPTS, REFERRAL_SOURCES, SOURCE_COLOR, TOUCH_VIA } from '@/lib/constants';
 import type { PlanRow } from '@/lib/sales';
 import { phone } from '@/lib/format';
 import { fmtDate, fmtMonth, relative } from '@/lib/dates';
@@ -34,9 +35,19 @@ type Lead = {
   lostReason: string | null;
   note: string | null;
   studentId: number | null;
+  campaign: string | null;
+  ad: string | null;
+  touches: number;
+  lastTouchAt: string;
+  referredById: number | null;
+  referredBy: string | null;
   createdAt: string;
   updatedAt: string;
 };
+
+type Touch = { id: number; source: string; campaign: string | null; ad: string | null; via: string; detail: string | null; createdAt: string; by: string | null };
+
+const srcColor = (s: string) => SOURCE_COLOR[s] ?? '#8C9A97';
 
 export function LeadsView({
   rows,
@@ -54,7 +65,13 @@ export function LeadsView({
   lostReasons,
   stageFilter,
   callsToday,
+  touches,
+  campaigns,
+  canReport,
 }: {
+  touches: Touch[];
+  campaigns: string[];
+  canReport: boolean;
   plan: PlanRow[];
   month: string;
   isBoss: boolean;
@@ -76,6 +93,14 @@ export function LeadsView({
   const toast = useToast();
   const [, start] = useTransition();
   const [source, setSource] = useState('');
+  const [campaign, setCampaign] = useState('');
+  const [q, setQ] = useState('');
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
   const [onlyMine, setOnlyMine] = useState(false);
   const [dueOnly, setDueOnly] = useState(callsToday);
   const [stageOnly, setStageOnly] = useState(stageFilter);
@@ -93,12 +118,29 @@ export function LeadsView({
   const isDue = (l: Lead) => !!l.nextCallAt && l.nextCallAt <= today && !['tolov_qildi', 'rad_etdi'].includes(l.stage);
   const dueCount = local.filter(isDue).length;
   const filtered = useMemo(
-    () => local.filter((l) => (!source || l.source === source) && (!onlyMine || l.assignedToId === meId) && (!dueOnly || isDue(l))),
+    () => {
+      const t = q.trim().toLowerCase();
+      const d = t.replace(/\D/g, '');
+      return local.filter(
+        (l) =>
+          (!source || l.source === source) &&
+          (!campaign || l.campaign === campaign) &&
+          (!t || l.fullName.toLowerCase().includes(t) || (d.length >= 3 && l.phone.includes(d))) &&
+          (!onlyMine || l.assignedToId === meId) &&
+          (!dueOnly || isDue(l)),
+      );
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [local, source, onlyMine, meId, dueOnly, today],
+    [local, source, campaign, q, onlyMine, meId, dueOnly, today],
   );
   const stages = stageOnly ? LEAD_STAGES.filter((s) => s.key === stageOnly) : LEAD_STAGES;
-  const sources = useMemo(() => [...new Set(local.map((l) => l.source))], [local]);
+  const sources = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const l of local) m.set(l.source, (m.get(l.source) ?? 0) + 1);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [local]);
+  const srcCampaigns = useMemo(() => (source ? [...new Set(local.filter((l) => l.source === source && l.campaign).map((l) => l.campaign!))] : []), [local, source]);
+  const waitMin = (l: Lead) => (now && l.stage === 'yangi' && !l.callStatus ? Math.floor((now - Date.parse(l.createdAt)) / 60000) : -1);
   const conv = useMemo(() => {
     const total = filtered.length;
     const paid = filtered.filter((l) => l.stage === 'tolov_qildi').length;
@@ -134,6 +176,11 @@ export function LeadsView({
         sub={`${conv.open} ta ochiq lid, konversiya ${conv.rate}%`}
         actions={
           <>
+            {canReport && (
+              <Link href="/lidlar/manbalar" className="inline-flex h-10 items-center gap-2 rounded-field border border-line-strong bg-white px-4 text-sm font-bold hover:bg-canvas">
+                <BarChart3 className="h-4 w-4" /> Manbalar hisoboti
+              </Link>
+            )}
             <Button variant="secondary" onClick={() => setLinks(true)}>
               <Link2 className="h-4 w-4" /> Ariza havolalari
             </Button>
@@ -177,13 +224,28 @@ export function LeadsView({
         </Card>
       )}
 
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-faint" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ism yoki telefon" className="field h-9 pl-9" aria-label="Lid qidirish" />
+        </div>
+        {srcCampaigns.length > 0 && (
+          <select value={campaign} onChange={(e) => setCampaign(e.target.value)} className="field h-9 sm:max-w-xs" aria-label="Kampaniya">
+            <option value="">Barcha kampaniyalar</option>
+            {srcCampaigns.map((c) => (
+              <option key={c}>{c}</option>
+            ))}
+          </select>
+        )}
+      </div>
       <div className="mb-4 flex flex-wrap items-center gap-1.5">
-        <Chip on={!source} onClick={() => setSource('')}>
-          Barcha manbalar
+        <Chip on={!source} onClick={() => { setSource(''); setCampaign(''); }}>
+          Barcha manbalar <span className="opacity-60">{local.length}</span>
         </Chip>
-        {sources.map((s) => (
-          <Chip key={s} on={source === s} onClick={() => setSource(s)}>
-            {s} <span className="opacity-60">{local.filter((l) => l.source === s).length}</span>
+        {sources.map(([s, n]) => (
+          <Chip key={s} on={source === s} onClick={() => { setSource(source === s ? '' : s); setCampaign(''); }}>
+            <span className="h-2 w-2 rounded-full" style={{ background: srcColor(s) }} />
+            {s} <span className="opacity-60">{n}</span>
           </Chip>
         ))}
         <span className="mx-1 hidden h-5 w-px bg-line sm:block" />
@@ -237,10 +299,24 @@ export function LeadsView({
                       onClick={() => go(l.id)}
                       className={cn('cursor-pointer rounded-xl border border-line bg-white p-3 shadow-lift transition-colors hover:border-line-strong', drag === l.id && 'opacity-50')}
                     >
-                      <div className="truncate text-sm font-bold">{l.fullName}</div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 truncate text-sm font-bold">{l.fullName}</div>
+                        {l.touches > 1 && (
+                          <span title={`${l.touches} marta murojaat qilgan`} className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-warn-soft px-1.5 py-0.5 text-2xs font-bold text-warn">
+                            <Repeat className="h-3 w-3" /> {l.touches}
+                          </span>
+                        )}
+                      </div>
                       <div className="whitespace-nowrap text-xs text-fg-muted tnum">{phone(l.phone)}</div>
+                      {waitMin(l) >= 15 && (
+                        <div className={cn('mt-1.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-2xs font-bold', waitMin(l) >= 60 ? 'bg-bad-soft text-bad' : 'bg-warn-soft text-warn')}>
+                          <Clock className="h-3 w-3" /> {waitMin(l) >= 1440 ? `${Math.floor(waitMin(l) / 1440)} kun` : waitMin(l) >= 60 ? `${Math.floor(waitMin(l) / 60)} soat` : `${waitMin(l)} daqiqa`} qo&apos;ng&apos;iroq kutyapti
+                        </div>
+                      )}
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        <span className="rounded-md bg-canvas px-1.5 py-0.5 text-2xs font-bold text-fg-muted">{l.source}</span>
+                        <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-2xs font-bold text-white" style={{ background: srcColor(l.source) }}>
+                          {l.source}
+                        </span>
                         {l.course && (
                           <span className="inline-flex min-w-0 items-center gap-1.5 text-xs font-semibold">
                             <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: l.color ?? '#8C9A97' }} />
@@ -248,6 +324,11 @@ export function LeadsView({
                           </span>
                         )}
                       </div>
+                      {l.campaign && (
+                        <div className="mt-1 flex min-w-0 items-center gap-1 text-2xs font-semibold text-fg-muted" title={[l.campaign, l.ad].filter(Boolean).join(' · ')}>
+                          <Megaphone className="h-3 w-3 shrink-0" /> <span className="truncate">{l.campaign}{l.ad ? ` · ${l.ad}` : ''}</span>
+                        </div>
+                      )}
                       {l.callStatus && !['tolov_qildi', 'rad_etdi'].includes(l.stage) && (
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                           <Badge tone={CALL_STATUSES.find((c) => c.key === l.callStatus)?.tone}>{CALL_STATUSES.find((c) => c.key === l.callStatus)?.label}</Badge>
@@ -294,7 +375,19 @@ export function LeadsView({
       )}
 
       <Modal open={creating} onClose={() => (openNew ? router.push(path) : setCreating(false))} title="Yangi lid">
-        <LeadForm courses={courses} sales={sales} onDone={() => (openNew ? router.push(path) : setCreating(false))} />
+        <LeadForm
+          courses={courses}
+          sales={sales}
+          campaigns={campaigns}
+          onDone={(id) => {
+            if (openNew) router.push(id ? `${path}?id=${id}` : path);
+            else {
+              setCreating(false);
+              if (id) go(id);
+            }
+          }}
+          onCancel={() => (openNew ? router.push(path) : setCreating(false))}
+        />
       </Modal>
 
       <Modal open={lost !== null} onClose={() => setLost(null)} title="Nega rad etdi?" size="sm">
@@ -347,6 +440,7 @@ export function LeadsView({
           sub={
             <span className="inline-flex items-center gap-2">
               {LEAD_STAGES.find((s) => s.key === selected.stage)?.label}, {selected.source}
+              {selected.campaign ? ` · ${selected.campaign}` : ''}
             </span>
           }
         >
@@ -384,8 +478,31 @@ export function LeadsView({
               ))}
             </div>
             <Card className="p-4">
-              <LeadForm key={selected.id} lead={selected} courses={courses} sales={sales} />
+              <LeadForm key={selected.id} lead={selected} courses={courses} sales={sales} campaigns={campaigns} />
             </Card>
+            <div className="card divide-y divide-line">
+              <div className="flex items-center justify-between px-4 py-2.5 text-sm font-bold">
+                <span>Murojaatlar</span>
+                <span className="text-xs font-semibold text-fg-muted">{touches.length} marta</span>
+              </div>
+              {touches.map((t, i) => (
+                <div key={t.id} className="flex gap-3 px-4 py-3">
+                  <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: srcColor(t.source) }} />
+                  <div className="min-w-0 text-sm">
+                    <div className="font-semibold">
+                      {t.source}
+                      {t.campaign && <span className="font-normal text-fg-muted"> · {t.campaign}{t.ad ? ` · ${t.ad}` : ''}</span>}
+                      {i === touches.length - 1 && <Badge tone="brand" className="ml-2">birinchi</Badge>}
+                    </div>
+                    <div className="text-xs text-fg-muted">
+                      {TOUCH_VIA[t.via] ?? t.via}
+                      {t.by ? `, ${t.by}` : ''}, {relative(t.createdAt)}
+                    </div>
+                    {t.detail && <p className="mt-0.5 break-words text-xs text-fg-muted">{t.detail}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
             <Card className="p-4">
               <CallForm key={selected.id} id={selected.id} today={today} />
             </Card>
@@ -417,21 +534,86 @@ export function LeadsView({
   );
 }
 
-function LeadForm({ lead, courses, sales, onDone }: { lead?: Lead; courses: { id: number; name: string }[]; sales: { id: number; name: string }[]; onDone?: () => void }) {
+function LeadForm({
+  lead,
+  courses,
+  sales,
+  campaigns,
+  onDone,
+  onCancel,
+}: {
+  lead?: Lead;
+  courses: { id: number; name: string }[];
+  sales: { id: number; name: string }[];
+  campaigns: string[];
+  onDone?: (id?: number) => void;
+  onCancel?: () => void;
+}) {
+  const [src, setSrc] = useState(lead?.source ?? '');
+  const [dup, setDup] = useState<Awaited<ReturnType<typeof checkLeadPhone>>>(null);
+  const [refQ, setRefQ] = useState(lead?.referredBy ?? '');
+  const [refId, setRefId] = useState<number | null>(lead?.referredById ?? null);
+  const [refOpts, setRefOpts] = useState<{ id: number; name: string; status: string }[]>([]);
+  const ads = src === 'Instagram target' || src === 'Facebook target';
   return (
-    <ActionForm action={saveLead.bind(null, lead?.id ?? null)} onDone={onDone} onCancel={onDone} submitLabel={lead ? 'Saqlash' : "Lid qo'shish"} resetOnSuccess={!lead}>
+    <ActionForm
+      action={saveLead.bind(null, lead?.id ?? null)}
+      onDone={(r) => onDone?.(r.ok && !lead ? r.id : undefined)}
+      onCancel={onCancel}
+      submitLabel={lead ? 'Saqlash' : "Lid qo'shish"}
+      resetOnSuccess={!lead}
+    >
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Ism">
-          <input name="fullName" defaultValue={lead?.fullName} className="field" required />
+          <input name="fullName" defaultValue={lead?.fullName} className="field" required maxLength={80} />
         </Field>
         <Field label="Telefon">
-          <input name="phone" type="tel" defaultValue={lead?.phone} className="field" placeholder="90 123 45 67" required />
+          <input
+            name="phone"
+            type="tel"
+            defaultValue={lead?.phone}
+            className="field"
+            placeholder="90 123 45 67"
+            required
+            onBlur={async (e) => {
+              if (lead) return;
+              const v = e.currentTarget.value;
+              setDup(v.replace(/\D/g, '').length >= 9 ? await checkLeadPhone(v) : null);
+            }}
+          />
         </Field>
-        <Field label="Manba">
-          <select name="source" defaultValue={lead?.source ?? 'Instagram'} className="field">
-            {LEAD_SOURCES.map((s) => (
-              <option key={s}>{s}</option>
+      </div>
+      {dup && (dup.lead || dup.student) && (
+        <div className="flex items-start gap-2 rounded-field border border-warn/30 bg-warn-soft px-3 py-2.5 text-[13px] text-warn" role="status">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            {dup.lead && (
+              <div>
+                Bu raqam bazada bor: <b>{dup.lead.name}</b> ({dup.lead.source}, {LEAD_STAGES.find((x) => x.key === dup.lead!.stage)?.label}). Saqlasangiz yangi lid ochilmaydi — unga murojaat qo&apos;shiladi.
+                {dup.lead.id && (
+                  <>
+                    {' '}
+                    <Link href={`/lidlar?id=${dup.lead.id}`} className="font-bold underline">
+                      Ochish
+                    </Link>
+                  </>
+                )}
+              </div>
+            )}
+            {dup.student && <div>Bu raqam o&apos;quvchi <b>{dup.student}</b> ga tegishli.</div>}
+          </div>
+        </div>
+      )}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Qayerdan keldi (manba)">
+          <select name="source" value={src} onChange={(e) => setSrc(e.target.value)} className="field" required>
+            <option value="" disabled>
+              Tanlang
+            </option>
+            {LEAD_SOURCES.map((x) => (
+              <option key={x}>{x}</option>
             ))}
+            {lead && !LEAD_SOURCES.includes(lead.source) && <option>{lead.source}</option>}
           </select>
         </Field>
         <Field label="Qiziqqan yo'nalishi">
@@ -444,12 +626,63 @@ function LeadForm({ lead, courses, sales, onDone }: { lead?: Lead; courses: { id
             ))}
           </select>
         </Field>
+        <Field label={ads ? 'Kampaniya' : 'Kampaniya / aksiya'} hint={ads ? 'Qaysi reklama — keyin hisobotda solishtiriladi' : 'Ixtiyoriy'}>
+          <input name="campaign" list="lead-campaigns" defaultValue={lead?.campaign ?? ''} maxLength={120} className="field" placeholder={ads ? 'Masalan: Oktabr AI kursi' : ''} />
+          <datalist id="lead-campaigns">
+            {campaigns.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+        </Field>
+        {ads ? (
+          <Field label="Reklama / video">
+            <input name="ad" defaultValue={lead?.ad ?? ''} maxLength={120} className="field" placeholder="Masalan: Video 2" />
+          </Field>
+        ) : (
+          <input type="hidden" name="ad" value={lead?.ad ?? ''} />
+        )}
+        {REFERRAL_SOURCES.includes(src) && (
+          <Field label="Kim tavsiya qildi" hint="O'quvchi yoki bitiruvchi — tavsiyalar hisobiga yoziladi">
+            <input type="hidden" name="referredByStudentId" value={refId ?? ''} />
+            <input
+              value={refQ}
+              onChange={async (e) => {
+                const v = e.target.value;
+                setRefQ(v);
+                setRefId(null);
+                setRefOpts(v.trim().length >= 2 ? await searchReferrers(v) : []);
+              }}
+              className="field"
+              placeholder="Ism bilan qidiring"
+              autoComplete="off"
+            />
+            {refOpts.length > 0 && !refId && (
+              <ul className="mt-1 max-h-44 overflow-auto rounded-field border border-line bg-white text-sm shadow-lift">
+                {refOpts.map((o) => (
+                  <li key={o.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRefId(o.id);
+                        setRefQ(o.name);
+                        setRefOpts([]);
+                      }}
+                      className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-canvas"
+                    >
+                      {o.name} <span className="text-xs text-fg-muted">{o.status === 'bitirgan' ? 'bitiruvchi' : "o'quvchi"}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Field>
+        )}
         <Field label="Mas'ul sotuvchi">
           <select name="assignedToId" defaultValue={lead?.assignedToId ?? ''} className="field">
             <option value="">Biriktirilmagan</option>
-            {sales.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
+            {sales.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.name}
               </option>
             ))}
           </select>
@@ -459,7 +692,7 @@ function LeadForm({ lead, courses, sales, onDone }: { lead?: Lead; courses: { id
         </Field>
       </div>
       <Field label="Izoh">
-        <textarea name="note" defaultValue={lead?.note ?? ''} rows={2} className="field" />
+        <textarea name="note" defaultValue={lead?.note ?? ''} rows={2} className="field" maxLength={1000} />
       </Field>
     </ActionForm>
   );
@@ -543,7 +776,7 @@ function LinkList() {
   const origin = typeof window === 'undefined' ? '' : window.location.origin;
   return (
     <ul className="divide-y divide-line rounded-xl border border-line">
-      {LEAD_SOURCES.filter((x) => !['Ofisga keldi', "Qo'ng'iroq", 'Boshqa'].includes(x)).map((src) => {
+      {LEAD_SOURCES.filter((x) => !['Ofisga keldi', "Qo'ng'iroq", 'Boshqa', 'uitc.uz', 'Akademiya sayti'].includes(x)).map((src) => {
         const url = `${origin}/akademiya/ariza?m=${encodeURIComponent(src)}`;
         return (
           <li key={src} className="flex items-center gap-3 px-4 py-2.5">

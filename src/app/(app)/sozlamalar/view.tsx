@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { Download, Database, ShieldCheck } from 'lucide-react';
 import { Card, CardHeader, Field } from '@/components/ui';
 import { ActionForm } from '@/components/action-form';
@@ -29,10 +30,18 @@ export type AuditRow = { id: number; at: string; actorName: string | null; actor
 
 type Academy = { payCard: string | null; payCardHolder: string | null; telegram: string | null; instagram: string | null; academyTagline: string | null };
 
-export function SettingsView({ s, counts, branches, academy, integrations, auditRows, reasonRows, defaultContract }: { auditRows: AuditRow[]; academy: Academy; integrations: { click: boolean; payme: boolean; telegram: boolean; bunny: boolean }; branches: Br[]; s: { centerName: string; phone: string | null; address: string | null; paymentDueDay: number; salaryDay: number; reservePercent: number; billingDefault: string; chargeAbsent: boolean; prorateFirstMonth: boolean; coinsPerLesson: number; coinsOnTimePay: number; debtNoticeMin: number; absentTaskAfter: number; contractTemplate: string | null }; reasonRows: ReasonRow[]; defaultContract: string; counts: Record<string, number> }) {
+export function SettingsView({ s, counts, branches, academy, integrations, auditRows, reasonRows, defaultContract }: { auditRows: AuditRow[]; academy: Academy; integrations: { click: boolean; payme: boolean; telegram: boolean; bunny: boolean }; branches: Br[]; s: { centerName: string; phone: string | null; address: string | null; paymentDueDay: number; salaryDay: number; reservePercent: number; billingDefault: string; chargeAbsent: boolean; prorateFirstMonth: boolean; coinsPerLesson: number; coinsOnTimePay: number; debtNoticeMin: number; absentTaskAfter: number; alumniContactDays: number; leadAutoAssign: boolean; contractTemplate: string | null }; reasonRows: ReasonRow[]; defaultContract: string; counts: Record<string, number> }) {
   return (
     <>
-      <PageHeader title="Sozlamalar" sub="Markaz ma'lumotlari, to'lov qoidalari va ma'lumotlar zaxirasi" />
+      <PageHeader
+        title="Sozlamalar"
+        sub="Markaz ma'lumotlari, to'lov qoidalari va ma'lumotlar zaxirasi"
+        actions={
+          <Link href="/sozlamalar/integratsiyalar" className="inline-flex h-10 items-center gap-2 rounded-field bg-brand px-4 text-sm font-bold text-white">
+            Integratsiyalar: Instagram, sayt
+          </Link>
+        }
+      />
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="min-w-0 space-y-5">
         <AcademyCard a={academy} integrations={integrations} />
@@ -212,7 +221,7 @@ function ReasonsCard({ rows }: { rows: ReasonRow[] }) {
   );
 }
 
-function AutomationCard({ s }: { s: { coinsPerLesson: number; coinsOnTimePay: number; debtNoticeMin: number; absentTaskAfter: number } }) {
+function AutomationCard({ s }: { s: { coinsPerLesson: number; coinsOnTimePay: number; debtNoticeMin: number; absentTaskAfter: number; alumniContactDays: number; leadAutoAssign: boolean } }) {
   return (
     <Card>
       <CardHeader title="Avtomatika" sub="Tizim o'zi bajaradigan ishlar. 0 — o'chirilgan." />
@@ -231,7 +240,14 @@ function AutomationCard({ s }: { s: { coinsPerLesson: number; coinsOnTimePay: nu
             <Field label="Ketma-ket necha marta kelmasa vazifa" hint="Administratorga avtomatik vazifa yaratiladi">
               <input type="number" name="absentTaskAfter" min={0} max={10} defaultValue={s.absentTaskAfter} className="field" />
             </Field>
+            <Field label="Bitiruvchi bilan aloqa, har necha kunda" hint="Muddat o'tsa administratorga eslatma vazifasi tushadi">
+              <input type="number" name="alumniContactDays" min={0} max={365} defaultValue={s.alumniContactDays} className="field" />
+            </Field>
           </div>
+          <label className="flex items-center gap-2 text-sm font-semibold">
+            <input type="checkbox" name="leadAutoAssign" defaultChecked={s.leadAutoAssign} className="h-4 w-4 accent-[#0E7C6B]" />
+            Instagram va saytdan kelgan lidlarni sotuvchilarga navbat bilan biriktirish
+          </label>
         </ActionForm>
       </div>
     </Card>

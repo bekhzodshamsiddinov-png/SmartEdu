@@ -258,24 +258,6 @@ export async function addGrade(studentId: number, fd: FormData) {
   });
 }
 
-export async function addResult(studentId: number, fd: FormData) {
-  return run(async () => {
-    const u = await assertSection('students');
-    if (!['rahbar', 'admin', 'oqituvchi', 'support'].includes(u.role)) throw new Error("Natijani o'qituvchi yoki administrator yozadi.");
-    await assertBranch('student', studentId);
-    await assertOwnStudent(u, studentId);
-    await db.insert(results).values({
-      studentId,
-      type: req(fd, 'type', 'Turi'),
-      title: req(fd, 'title', 'Natija'),
-      amount: int(fd, 'amount'),
-      date: str(fd, 'date') || today(),
-      note: str(fd, 'note'),
-    });
-    return { message: 'Natija qo\'shildi' };
-  });
-}
-
 export async function deleteStudent(id: number) {
   return run(async () => {
     const u = await assertSection('students');

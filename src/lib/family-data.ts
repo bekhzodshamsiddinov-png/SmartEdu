@@ -9,7 +9,7 @@ export type Overview = Awaited<ReturnType<typeof childOverview>>;
 /** Ilova bosh sahifasi uchun bitta so'rovlar to'plami */
 export async function childOverview(sid: number) {
   const t = today();
-  const [balance, groups, att, coins, subs, grades] = await Promise.all([
+  const [balance, groups, att, coins, subs, grades, wins] = await Promise.all([
     studentBalance(sid),
     db.execute<{ id: number; name: string; course: string; color: string; days: string; start_time: string; end_time: string; room: string | null; teacher: string | null; fee: number }>(sql`
       select g.id, g.name, c.name course, c.color, g.days, g.start_time, g.end_time, g.room, u.full_name teacher, e.monthly_fee fee
@@ -22,6 +22,7 @@ export async function childOverview(sid: number) {
         (select count(*) from charges c where c.subscription_id = ss.id and c.kind = 'abonement_dars')::int used
       from student_subscriptions ss where ss.student_id = ${sid} and ss.status = 'faol' and ss.end_date >= ${t} order by ss.end_date`),
     db.execute<{ period: string; score: number; comment: string | null }>(sql`select period, score, comment from grades where student_id = ${sid} order by period desc, id desc limit 5`),
+    db.execute<{ type: string; title: string; date: string; place: string | null }>(sql`select type, title, date::text, place from results where student_id = ${sid} order by date desc, id desc limit 6`),
   ]);
   const present = att.filter((a) => a.status === 'keldi' || a.status === 'kechikdi').length;
   return {
@@ -41,6 +42,7 @@ export async function childOverview(sid: number) {
     })(),
     subscriptions: subs.filter((s) => s.kind !== 'dars' || s.used < s.lessons_total),
     grades: [...grades],
+    wins: [...wins],
   };
 }
 

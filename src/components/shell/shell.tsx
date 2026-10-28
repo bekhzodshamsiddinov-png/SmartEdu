@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   Home, Magnet, Users, Layers, CalendarCheck, Wallet, Landmark, BriefcaseBusiness, ListChecks,
-  GraduationCap, BarChart3, Settings, ClipboardCheck, Gauge, MonitorPlay, CalendarRange, MessageSquareText, Ticket, Menu, X, LogOut, Plus, ChevronDown,
+  GraduationCap, BarChart3, Settings, ClipboardCheck, Gauge, MonitorPlay, CalendarRange, MessageSquareText, Ticket, Trophy, Menu, X, LogOut, Plus, ChevronDown,
 } from 'lucide-react';
 import { Logo } from '@/components/logo';
 import { Avatar, cn } from '@/components/ui';
@@ -15,7 +15,7 @@ import type { NavItem } from './nav';
 
 const ICONS: Record<string, typeof Home> = {
   home: Home, magnet: Magnet, users: Users, layers: Layers, check: CalendarCheck, wallet: Wallet,
-  bank: Landmark, desk: ClipboardCheck, control: Gauge, play: MonitorPlay, brief: BriefcaseBusiness, tasks: ListChecks, grad: GraduationCap, chart: BarChart3, cog: Settings, schedule: CalendarRange, messages: MessageSquareText, ticket: Ticket,
+  bank: Landmark, desk: ClipboardCheck, control: Gauge, play: MonitorPlay, brief: BriefcaseBusiness, tasks: ListChecks, grad: GraduationCap, chart: BarChart3, cog: Settings, schedule: CalendarRange, messages: MessageSquareText, ticket: Ticket, trophy: Trophy,
 };
 
 type QuickAdd = { href: string; label: string }[];
