@@ -74,13 +74,17 @@ export async function saveAttendance(input: {
         set: { topic: input.topic || null, ...(teacherStatus ? { teacherStatus, arrivalChecked: true } : {}), markedById: u.id },
       });
     // Ketma-ket 2 marta kelmaganlarni "xavf ostida" deb belgilash
-    await db.execute(sql`
-      update students set status = 'xavf'
-      where status = 'faol' and id in (
-        select student_id from (
-          select student_id, status, row_number() over (partition by student_id order by date desc) rn from attendance
-        ) t where rn <= 2 group by student_id having count(*) = 2 and count(*) filter (where status = 'kelmadi') = 2
-      )`);
+    // Faqat shu davomatda belgilangan o'quvchilar tekshiriladi (butun jadvalni har safar aylanmaslik uchun)
+    const marked = input.marks.map((m) => m.studentId);
+    if (marked.length)
+      await db.execute(sql`
+        update students set status = 'xavf'
+        where status = 'faol' and id in (
+          select student_id from (
+            select student_id, status, row_number() over (partition by student_id order by date desc) rn from attendance
+            where student_id in (${sql.join(marked.map((c) => sql`${c}`), sql`, `)})
+          ) t where rn <= 2 group by student_id having count(*) = 2 and count(*) filter (where status = 'kelmadi') = 2
+        )`);
     // Kelgan bo'lsa yana faol
     const came = input.marks.filter((m) => m.status === 'keldi' || m.status === 'kechikdi').map((m) => m.studentId);
     if (came.length)

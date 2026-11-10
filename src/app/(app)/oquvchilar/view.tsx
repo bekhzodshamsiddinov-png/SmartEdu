@@ -1,4 +1,5 @@
 'use client';
+import { Ago } from '@/components/ago';
 import { ResultForm, ResultList, type ResultRow } from '@/components/results';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
@@ -17,7 +18,7 @@ import { PlanCard, type PlanLite } from '@/components/plan-card';
 import { sellSubscription } from '@/app/actions/subscriptions';
 import { ATT_LABEL, NOTE_KINDS, PAY_METHOD_LABEL, RESULT_TYPES, RETURN_RESULTS, STUDENT_STATUS } from '@/lib/constants';
 import { money, phone } from '@/lib/format';
-import { fmtDate, fmtMonth, fmtShort, relative, today } from '@/lib/dates';
+import { fmtDate, fmtMonth, fmtShort, today } from '@/lib/dates';
 
 export type StudentRow = {
   id: number;
@@ -740,7 +741,7 @@ function ProfileDrawer({ p, groups, role, showMoney, onClose }: { p: Profile; gr
                         <Badge tone={n.kind === 'qongiroq' ? 'info' : n.kind === 'ota_ona' ? 'brand' : 'neutral'}>{NOTE_KINDS[n.kind] ?? n.kind}</Badge>
                         <span>
                           {n.by && `${n.by}, `}
-                          {relative(n.createdAt)}
+                          <Ago d={n.createdAt} />
                         </span>
                       </div>
                       <p className="mt-1.5 whitespace-pre-wrap text-sm">{n.text}</p>
@@ -792,7 +793,7 @@ function ProfileDrawer({ p, groups, role, showMoney, onClose }: { p: Profile; gr
         <EditStudentForm s={s} onDone={() => setModal(null)} onCancel={() => setModal(null)} />
       </Modal>
       <Modal open={modal === 'enroll'} onClose={() => setModal(null)} title="Guruhga qo'shish" size="sm">
-        <EnrollForm studentId={s.id} groups={groups} onDone={() => setModal(null)} />
+        <EnrollForm studentId={s.id} groups={groups.filter((g) => !p.enrollments.some((c) => !c.endDate && c.groupId === g.id))} onDone={() => setModal(null)} />
       </Modal>
       <Modal open={modal === 'return'} onClose={() => setModal(null)} title="Qaytarish urinishi" size="sm">
         <ActionForm action={updateReturn.bind(null, s.id)} onDone={() => setModal(null)} onCancel={() => setModal(null)}>

@@ -1,4 +1,5 @@
 'use client';
+import { Ago } from '@/components/ago';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, CheckCircle2, Circle, Copy, ExternalLink, Instagram, Link2, RefreshCw, ShieldCheck, Unplug, AlertTriangle, KeyRound } from 'lucide-react';
@@ -7,7 +8,6 @@ import { ActionButton, ActionForm } from '@/components/action-form';
 import { useToast } from '@/components/toast';
 import { metaConnect, metaDisconnect, metaRetry, metaRotateVerifyToken, metaSaveForm, metaSelectPage, metaSyncNow } from '@/app/actions/integrations';
 import type { MetaForm } from '@/lib/meta';
-import { relative } from '@/lib/dates';
 
 type Meta = {
   hasSecret: boolean;
@@ -89,9 +89,9 @@ export function IntegrationsView({
         )}
         {meta.connected && (
           <div className="flex flex-wrap items-center gap-2 border-t border-line px-5 py-3 text-xs text-fg-muted">
-            <span>Oxirgi lid: {meta.lastEventAt ? relative(meta.lastEventAt) : "hali yo'q"}</span>
+            <span>Oxirgi lid: {meta.lastEventAt ? <Ago d={meta.lastEventAt} /> : "hali yo'q"}</span>
             <span>·</span>
-            <span>Oxirgi tekshiruv: {meta.lastSyncAt ? relative(meta.lastSyncAt) : '—'}</span>
+            <span>Oxirgi tekshiruv: {meta.lastSyncAt ? <Ago d={meta.lastSyncAt} /> : '—'}</span>
             <div className="ml-auto flex gap-2">
               <ActionButton variant="secondary" size="sm" action={metaSyncNow}>
                 <RefreshCw className="h-3.5 w-3.5" /> Hozir tekshirish

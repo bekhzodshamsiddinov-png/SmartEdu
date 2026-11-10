@@ -33,7 +33,7 @@ export function lessonPrice(monthlyFee: number, days: string, date: string) {
 }
 
 /** Oylik hisobda birinchi oy qisman: qo'shilgan kundan oy oxirigacha bo'lgan darslar ulushi */
-function firstMonthAmount(fee: number, days: string, start: string) {
+export function firstMonthAmount(fee: number, days: string, start: string) {
   const month = start.slice(0, 7);
   const total = lessonsInMonth(days, month);
   if (!total) return fee;
@@ -52,13 +52,15 @@ export async function ensureMonthlyCharges(force = false) {
   lastEnsure = Date.now();
   const t = today();
   const s = await getSettings();
+  // Davriy chaqiruvda faqat yaqinda faol bo'lgan yozuvlar (eskilari allaqachon hisoblangan); majburiy chaqiruvda — hammasi
+  const scope = force ? sql`` : sql`and coalesce(e.end_date, ${t}::date) >= (date_trunc('month', ${t}::date) - interval '1 month')::date`;
   if (s.prorateFirstMonth) {
     // Birinchi oyni qisman hisoblash uchun yangi oylarni bittadan qo'shamiz
     const missing = await db.execute<{ id: number; student_id: number; group_id: number; monthly_fee: number; start_date: string; days: string; m: string }>(sql`
       select e.id, e.student_id, e.group_id, e.monthly_fee, e.start_date::text, g.days, to_char(m.d, 'YYYY-MM') m
       from enrollments e join groups g on g.id = e.group_id
       cross join lateral generate_series(date_trunc('month', e.start_date), date_trunc('month', least(coalesce(e.end_date, ${t}::date), ${t}::date)), interval '1 month') m(d)
-      where g.billing = 'oylik' and e.start_date <= ${t}::date
+      where g.billing = 'oylik' and e.start_date <= ${t}::date ${scope}
         and not exists (select 1 from charges c where c.enrollment_id = e.id and c.kind = 'oylik' and c.month = to_char(m.d, 'YYYY-MM'))
         and not exists (select 1 from charges c where c.student_id = e.student_id and c.group_id = e.group_id and c.enrollment_id <> e.id and c.kind = 'oylik' and c.month = to_char(m.d, 'YYYY-MM'))
         and not exists (select 1 from student_subscriptions ss where ss.enrollment_id = e.id and ss.kind = 'oy' and ss.status in ('faol','toxtatildi')
@@ -78,7 +80,7 @@ export async function ensureMonthlyCharges(force = false) {
     select e.student_id, e.id, e.group_id, 'oylik', e.monthly_fee, greatest(m.d::date, e.start_date), to_char(m.d, 'YYYY-MM')
     from enrollments e join groups g on g.id = e.group_id
     cross join lateral generate_series(date_trunc('month', e.start_date), date_trunc('month', least(coalesce(e.end_date, ${t}::date), ${t}::date)), interval '1 month') m(d)
-    where g.billing = 'oylik' and e.start_date <= ${t}::date
+    where g.billing = 'oylik' and e.start_date <= ${t}::date ${scope}
       -- Shu oy shu guruhda avval hisoblangan bo'lsa (muzlatib qaytgan, qayta yozilgan) — ikkinchi marta yechilmaydi
       and not exists (select 1 from charges c where c.student_id = e.student_id and c.group_id = e.group_id and c.enrollment_id <> e.id and c.kind = 'oylik' and c.month = to_char(m.d, 'YYYY-MM'))
       -- Abonement bilan qoplangan oylar uchun alohida oylik yechilmaydi

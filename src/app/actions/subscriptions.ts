@@ -179,6 +179,9 @@ export async function cancelSubscription(id: number, fd: FormData) {
         .where(and(eq(studentSubscriptions.id, id), eq(studentSubscriptions.status, 'faol')))
         .returning({ id: studentSubscriptions.id });
       if (!r.length) return false;
+      // To'xtatilgan sanadan keyingi darslar abonementdan uziladi (qayta hisoblashda oddiy dars bo'ladi),
+      // aks holda oldingi darslarni sanashda ular ham hisobga kirib, ikki marta yechim bo'lardi
+      if (s.kind === 'dars' && mode !== 'toliq') await tx.execute(sql`delete from charges where subscription_id = ${s.id} and kind = 'abonement_dars' and date >= ${newEnd ? addDays(newEnd, 1) : today()}`);
       if (refund > 0)
         await tx.insert(charges).values({ studentId: s.studentId, enrollmentId: s.enrollmentId, groupId: null, kind: 'tuzatish', amount: -refund, date: today(), month: today().slice(0, 7), subscriptionId: s.id, note: `Abonement qaytarildi: ${s.name}`, createdById: u.id });
       return true;

@@ -11,7 +11,7 @@ import { absentStreakIds, getBalances } from '@/lib/finance';
 import { attendanceRate, funnel, incomeExpense, leftReasons, monthlySeries, studentFlow, studentsByCourse } from '@/lib/stats';
 import { Badge, Card, CardHeader, Empty, Stat, cn } from '@/components/ui';
 import { PeriodTabs, parsePeriod } from '@/components/period-tabs';
-import { MoneyBars } from '@/components/charts/money-bars';
+import { MoneyBars } from '@/components/charts/lazy';
 import { getBranchScope } from '@/lib/branch';
 
 export const metadata = { title: 'Bosh sahifa' };

@@ -31,14 +31,20 @@ export async function payroll(month: string, branchId: number | null = null): Pr
   const [staff, coll, adj, paid] = await Promise.all([
     db.execute<{ id: number; full_name: string; role: string; base_salary: number; teacher_percent: number }>(sql`
       select id, full_name, role::text, base_salary, teacher_percent from users
-      where active and role <> 'rahbar' ${branchId ? sql`and (branch_id = ${branchId} or branch_id is null)` : sql``}
+      where role <> 'rahbar'
+        -- Oy davomida ishdan bo'shagan xodim ham shu oy uchun hisoblanadi
+        and (active or exists (select 1 from staff_adjustments a where a.user_id = users.id and a.month = ${month})
+          or exists (select 1 from payments p join enrollments e on e.student_id = p.student_id join groups g on g.id = e.group_id where g.teacher_id = users.id and p.paid_at between ${from} and ${to} and p.cancelled_at is null)
+          or exists (select 1 from salary_payouts sp where sp.user_id = users.id and sp.month = ${month}))
+        ${branchId ? sql`and (branch_id = ${branchId} or branch_id is null)` : sql``}
       order by role, full_name`),
     db.execute<{ teacher_id: number; s: string }>(sql`
       select g.teacher_id, sum(p.amount)::bigint s
       from payments p
       left join lateral (
         select e.group_id from enrollments e
-        where e.student_id = p.student_id and e.start_date <= p.paid_at
+        -- Oldindan to'lov (guruh hali boshlanmagan) ham o'sha guruh o'qituvchisiga yoziladi
+        where e.student_id = p.student_id and (e.id = p.enrollment_id or e.start_date <= p.paid_at)
         order by (e.id = p.enrollment_id) desc, (e.end_date is null or e.end_date >= p.paid_at) desc, e.start_date desc limit 1
       ) en on true
       join groups g on g.id = en.group_id

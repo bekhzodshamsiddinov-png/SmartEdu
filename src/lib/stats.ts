@@ -79,7 +79,7 @@ export async function funnel(from: string, to: string, branch: number | null = n
       count(*) filter (where max_stage >= 3)::int came,
       count(*) filter (where max_stage >= 4)::int paid,
       count(*) filter (where stage = 'rad_etdi')::int lost
-    from leads where created_at::date between ${from} and ${to} ${andBranch('branch_id', branch)}`);
+    from leads where (created_at at time zone 'Asia/Tashkent')::date between ${from} and ${to} ${andBranch('branch_id', branch)}`);
   return r;
 }
 

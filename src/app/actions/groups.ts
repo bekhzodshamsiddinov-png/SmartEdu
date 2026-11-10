@@ -1,12 +1,12 @@
 'use server';
-import { ensureMonthlyCharges, lessonsInMonth, syncLessonCharges } from '@/lib/billing';
+import { firstMonthAmount, ensureMonthlyCharges, lessonsInMonth, syncLessonCharges } from '@/lib/billing';
 import { eq, and, isNull, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { charges } from '@/db/schema';
 import { groups, courses, enrollments, students } from '@/db/schema';
 import { assertSection } from '@/lib/auth';
 import { run, str, req, int, bool } from '@/lib/action';
-import { DAY_CODES, addDays, groupHasLessonOn } from '@/lib/dates';
+import { DAY_CODES, addDays, groupHasLessonOn, today } from '@/lib/dates';
 import { scheduleConflict } from '@/lib/schedule';
 import { moveSubscriptions } from '@/lib/subscription-guard';
 import { assertBranch, assertStaffFor, resolveBranch } from '@/lib/branch';
@@ -62,8 +62,16 @@ export async function closeGroup(id: number) {
     const u = await assertSection('groups');
     onlyManagers(u.role);
     await assertBranch('group', id);
-    await db.update(groups).set({ active: false }).where(eq(groups.id, id));
-    return { message: 'Guruh yopildi' };
+    const [sub] = await db.execute<{ c: number }>(sql`
+      select count(*)::int c from student_subscriptions ss join enrollments e on e.id = ss.enrollment_id
+      where e.group_id = ${id} and ss.status = 'faol' and ss.end_date >= ${today()}`);
+    if (sub?.c) throw new Error(`Guruhda ${sub.c} ta amaldagi abonement bor. Avval ularni bekor qiling yoki o'quvchilarni boshqa guruhga o'tkazing.`);
+    // Yopilgan guruh o'quvchilari guruhdan chiqariladi — keyingi oylardan pul yechilmaydi (joriy oy o'zgarmaydi)
+    await db.transaction(async (tx) => {
+      await tx.update(groups).set({ active: false }).where(eq(groups.id, id));
+      await tx.execute(sql`update enrollments set active = false, end_date = ${today()} where group_id = ${id} and end_date is null`);
+    });
+    return { message: "Guruh yopildi, o'quvchilar guruhdan chiqarildi" };
   });
 }
 
@@ -113,7 +121,15 @@ export async function moveStudent(enrollmentId: number, fd: FormData) {
     // Shu oy avvalgi guruhda allaqachon hisoblangan bo'lsa, yangi guruhda ikkinchi marta yechilmaydi
     if (subIds.length) await db.execute(sql`update student_subscriptions set enrollment_id = ${ne.id} where id in (${sql.join(subIds.map((x) => sql`${x}`), sql`, `)})`);
     const [already] = await db.execute<{ c: number }>(sql`select count(*)::int c from charges where enrollment_id = ${enrollmentId} and kind = 'oylik' and month = ${d.slice(0, 7)}`);
-    if (already.c) {
+    const [oldG] = await db.select({ billing: groups.billing }).from(groups).where(eq(groups.id, e.groupId));
+    const [newG] = await db.select({ billing: groups.billing, days: groups.days }).from(groups).where(eq(groups.id, groupId));
+    if (oldG?.billing === 'dars' && newG?.billing === 'oylik') {
+      // Shu oy darslari eski guruhda alohida yechilgan — yangi guruhda faqat qolgan darslar uchun (qisman) oylik
+      await db
+        .insert(charges)
+        .values({ studentId: e.studentId, enrollmentId: ne.id, groupId, kind: 'oylik', amount: firstMonthAmount(e.monthlyFee, newG.days, d), date: d, month: d.slice(0, 7), note: "Ko'chirildi: oyning qolgan darslari uchun", createdById: u.id })
+        .onConflictDoNothing();
+    } else if (already.c) {
       const [ng] = await db.select({ billing: groups.billing }).from(groups).where(eq(groups.id, groupId));
       if (ng?.billing === 'dars') {
         // Yangi guruhda har dars uchun yechiladi — eski guruhdagi oylik to'lovning qolgan darslarga to'g'ri keladigan qismi qaytariladi
@@ -152,6 +168,14 @@ async function switchBilling(groupId: number, billing: string) {
     for (const r of dates) await syncLessonCharges(groupId, r.d);
   } else {
     await db.execute(sql`delete from charges where group_id = ${groupId} and kind = 'dars' and month = ${month}`);
+    // O'tgan oylar dars bo'yicha hisoblangan — ular uchun oylik yechilmasligi uchun 0 so'mlik belgi qo'yiladi
+    await db.execute(sql`
+      insert into charges (student_id, enrollment_id, group_id, kind, amount, date, month, note)
+      select e.student_id, e.id, e.group_id, 'oylik', 0, m.d::date, to_char(m.d, 'YYYY-MM'), 'Bu oy dars bo''yicha hisoblangan'
+      from enrollments e
+      cross join lateral generate_series(date_trunc('month', e.start_date), (${month} || '-01')::date - interval '1 month', interval '1 month') m(d)
+      where e.group_id = ${groupId} and e.start_date < (${month} || '-01')::date
+      on conflict do nothing`);
     await ensureMonthlyCharges(true);
   }
 }

@@ -1,4 +1,5 @@
 'use client';
+import { Ago } from '@/components/ago';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { Magnet, Phone, Plus, UserPlus, Trash2, Calendar, PhoneCall, Target, MessageSquareQuote, X, Link2, Copy, Search, BarChart3, Repeat, Clock, Megaphone, AlertTriangle } from 'lucide-react';
@@ -14,7 +15,7 @@ import { addNote } from '@/app/actions/students';
 import { CALL_STATUSES, LEAD_SOURCES, LEAD_STAGES, OBJECTION_SCRIPTS, REFERRAL_SOURCES, SOURCE_COLOR, TOUCH_VIA } from '@/lib/constants';
 import type { PlanRow } from '@/lib/sales';
 import { phone } from '@/lib/format';
-import { fmtDate, fmtMonth, relative } from '@/lib/dates';
+import { fmtDate, fmtMonth } from '@/lib/dates';
 
 const fmtMonthShort = (m: string) => fmtMonth(m).toLowerCase();
 
@@ -343,7 +344,7 @@ export function LeadsView({
                       {l.stage === 'rad_etdi' && l.lostReason && <div className="mt-1.5 text-xs text-bad">{l.lostReason}</div>}
                       <div className="mt-2 flex items-center justify-between text-2xs text-fg-faint">
                         <span className="truncate">{l.assigned ?? 'Biriktirilmagan'}</span>
-                        <span className="shrink-0">{relative(l.createdAt)}</span>
+                        <span className="shrink-0"><Ago d={l.createdAt} /></span>
                       </div>
                       {/* mobil/klaviatura uchun */}
                       <select
@@ -496,7 +497,7 @@ export function LeadsView({
                     </div>
                     <div className="text-xs text-fg-muted">
                       {TOUCH_VIA[t.via] ?? t.via}
-                      {t.by ? `, ${t.by}` : ''}, {relative(t.createdAt)}
+                      {t.by ? `, ${t.by}` : ''}, <Ago d={t.createdAt} />
                     </div>
                     {t.detail && <p className="mt-0.5 break-words text-xs text-fg-muted">{t.detail}</p>}
                   </div>
@@ -521,7 +522,7 @@ export function LeadsView({
               {history.map((h) => (
                 <div key={h.id} className="px-4 py-3">
                   <div className="text-xs text-fg-muted">
-                    {h.by ?? 'Tizim'}, {relative(h.createdAt)}
+                    {h.by ?? 'Tizim'}, <Ago d={h.createdAt} />
                   </div>
                   <p className="mt-1 text-sm">{h.text.replace(/^Bosqich: (\w+)/, (_, k) => `Bosqich: ${LEAD_STAGES.find((s) => s.key === k)?.label ?? k}`)}</p>
                 </div>

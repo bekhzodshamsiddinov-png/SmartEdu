@@ -5,7 +5,7 @@ import { students, enrollments, groups, courses, notes, grades, results, graduat
 import { assertSection } from '@/lib/auth';
 import { run, str, req, int } from '@/lib/action';
 import { normalizePhone } from '@/lib/format';
-import { today } from '@/lib/dates';
+import { addDays, today } from '@/lib/dates';
 import { assertBranch, resolveBranch } from '@/lib/branch';
 import { audit } from '@/lib/security';
 import { ensureMonthlyCharges, syncCurrentMonthFee } from '@/lib/billing';
@@ -131,21 +131,26 @@ export async function changeStatus(id: number, fd: FormData) {
       throw new Error("Bu holatni rahbar yoki administrator o'zgartiradi.");
     }
     const date = str(fd, 'date') || today();
-    if (status === 'ketgan' || status === 'bitirgan' || status === 'muzlatilgan') await assertNoActiveSubscription({ studentId: id });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("Sana noto'g'ri.");
+    if (status === 'ketgan' || status === 'bitirgan' || status === 'muzlatilgan') {
+      if (date > today()) throw new Error('Sana kelajakda bo\'lmaydi.');
+      if (date < addDays(today(), -92)) throw new Error("3 oydan oldingi sana bilan belgilab bo'lmaydi.");
+      await assertNoActiveSubscription({ studentId: id });
+    }
     if (status === 'ketgan') {
       const reason = req(fd, 'leftReason', 'Ketish sababi');
       await db
         .update(students)
         .set({ status, leftAt: date, leftReason: reason, returnAttempt: str(fd, 'returnAttempt'), returnResult: str(fd, 'returnResult') })
         .where(eq(students.id, id));
-      await db.update(enrollments).set({ active: false, endDate: date }).where(and(eq(enrollments.studentId, id), isNull(enrollments.endDate)));
+      await closeEnrollments(id, date);
       if (str(fd, 'returnAttempt'))
         await db.insert(notes).values({ entityType: 'student', entityId: id, kind: 'qongiroq', text: `Qaytarish urinishi: ${str(fd, 'returnAttempt')}. Natija: ${str(fd, 'returnResult') || '—'}`, authorId: u.id });
       return { message: "O'quvchi ketgan deb belgilandi" };
     }
     if (status === 'bitirgan') {
       await db.update(students).set({ status, graduatedAt: date }).where(eq(students.id, id));
-      await db.update(enrollments).set({ active: false, endDate: date }).where(and(eq(enrollments.studentId, id), isNull(enrollments.endDate)));
+      await closeEnrollments(id, date);
       await db.insert(graduates).values({ studentId: id, lastContactAt: date }).onConflictDoNothing();
       return { message: "Bitiruvchilar ro'yxatiga qo'shildi" };
     }
@@ -153,7 +158,7 @@ export async function changeStatus(id: number, fd: FormData) {
       const until = str(fd, 'freezeUntil');
       if (!until || !/^\d{4}-\d{2}-\d{2}$/.test(until) || until < date) throw new Error('Qaytish sanasini kiriting.');
       await db.update(students).set({ status, freezeUntil: until, leftReason: req(fd, 'freezeReason', 'Muzlatish sababi').slice(0, 80) }).where(eq(students.id, id));
-      await db.update(enrollments).set({ active: false, endDate: date }).where(and(eq(enrollments.studentId, id), isNull(enrollments.endDate)));
+      await closeEnrollments(id, date);
       return { message: "O'qish vaqtincha to'xtatildi" };
     }
     await db.update(students).set({ status, leftAt: null, leftReason: null, freezeUntil: null }).where(eq(students.id, id));
@@ -163,6 +168,7 @@ export async function changeStatus(id: number, fd: FormData) {
       const custom = canSetFee(u.role) ? int(fd, 'monthlyFee') : null;
       if (custom !== null && custom < 0) throw new Error("Oylik to'lov manfiy bo'lmaydi.");
       const fee = custom ?? (await feeFor(groupId));
+      await assertNotInGroup(id, groupId);
       await db.insert(enrollments).values({ studentId: id, groupId, monthlyFee: fee, startDate: date });
       await ensureMonthlyCharges(true);
     }
@@ -195,8 +201,11 @@ export async function enroll(studentId: number, fd: FormData) {
     const custom = canSetFee(u.role) ? int(fd, 'monthlyFee') : null;
     if (custom !== null && custom < 0) throw new Error("Oylik to'lov manfiy bo'lmaydi.");
     const fee = custom ?? (await feeFor(groupId));
-    await db.insert(enrollments).values({ studentId, groupId, monthlyFee: fee, startDate: str(fd, 'startDate') || today() });
-      await ensureMonthlyCharges(true);
+    const start = str(fd, 'startDate') || today();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) throw new Error("Sana noto'g'ri.");
+    await assertNotInGroup(studentId, groupId);
+    await db.insert(enrollments).values({ studentId, groupId, monthlyFee: fee, startDate: start });
+    await ensureMonthlyCharges(true);
     const [g] = await db.select({ b: groups.branchId }).from(groups).where(eq(groups.id, groupId));
     if (g?.b) await db.update(students).set({ branchId: g.b }).where(eq(students.id, studentId));
     await db.update(students).set({ status: 'faol' }).where(and(eq(students.id, studentId), eq(students.status, 'muzlatilgan')));
@@ -270,5 +279,26 @@ export async function deleteStudent(id: number) {
     await db.delete(students).where(eq(students.id, id));
     await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: "O'quvchi o'chirildi", detail: st.name });
     return { message: "O'quvchi o'chirildi" };
+  });
+}
+
+/** Bir guruhda ikki marta o'qib bo'lmaydi (aks holda oylik ikki marta yechiladi) */
+async function assertNotInGroup(studentId: number, groupId: number) {
+  const [x] = await db.execute(sql`select 1 from enrollments where student_id = ${studentId} and group_id = ${groupId} and end_date is null limit 1`);
+  if (x) throw new Error("O'quvchi bu guruhda allaqachon o'qiyapti.");
+}
+
+/**
+ * O'quvchining ochiq guruh yozuvlarini shu sana bilan yopadi. Sana orqaga qo'yilgan bo'lsa —
+ * shu sanadan keyingi oylar va darslar uchun avtomatik yechimlar ham olib tashlanadi (qarz bo'lib qolmasin).
+ */
+async function closeEnrollments(studentId: number, date: string) {
+  await db.transaction(async (tx) => {
+    const ids = await tx.execute<{ id: number }>(sql`
+      update enrollments set active = false, end_date = ${date} where student_id = ${studentId} and end_date is null returning id`);
+    if (!ids.length) return;
+    const list = sql.join(ids.map((r) => sql`${r.id}`), sql`, `);
+    await tx.execute(sql`delete from charges where enrollment_id in (${list}) and kind = 'oylik' and month > ${date.slice(0, 7)} and created_by_id is null`);
+    await tx.execute(sql`delete from charges where enrollment_id in (${list}) and kind in ('dars','abonement_dars') and date > ${date}`);
   });
 }

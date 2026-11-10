@@ -7,7 +7,7 @@ import { Badge, Button, Card, CardHeader, Empty, Field, PageHeader, Stat, cn } f
 import { Modal } from '@/components/modal';
 import { ActionButton, ActionForm } from '@/components/action-form';
 import { MoneyInput } from '@/components/money-input';
-import { MoneyBars } from '@/components/charts/money-bars';
+import { MoneyBars } from '@/components/charts/lazy';
 import { deleteTransaction, saveReconciliation, saveTransaction } from '@/app/actions/finance';
 import { money } from '@/lib/format';
 import { addMonths, fmtMonth, fmtShort, thisMonth, today } from '@/lib/dates';

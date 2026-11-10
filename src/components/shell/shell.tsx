@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import {
   Home, Magnet, Users, Layers, CalendarCheck, Wallet, Landmark, BriefcaseBusiness, ListChecks,
   GraduationCap, BarChart3, Settings, ClipboardCheck, Gauge, MonitorPlay, CalendarRange, MessageSquareText, Ticket, Trophy, Menu, X, LogOut, Plus, ChevronDown,
@@ -42,23 +42,27 @@ export function Shell({
   const bottom = items.filter((i) => ['/ish-stoli', '/', '/davomat', '/oquvchilar', '/tolovlar', '/lidlar'].includes(i.href)).slice(0, 4);
 
   const nav = (
-    <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-2" aria-label="Asosiy menyu">
-      {items.map((it) => {
+    <nav className="flex-1 overflow-y-auto px-3 pb-3 pt-1 [scrollbar-width:thin]" aria-label="Asosiy menyu">
+      {items.map((it, i) => {
         const I = ICONS[it.icon] ?? Home;
         const on = active(it.href);
+        const head = it.group !== items[i - 1]?.group;
         return (
+          <Fragment key={it.href}>
+          {head && <div className={cn('px-3 pb-1 text-[11px] font-bold uppercase tracking-[0.08em] text-white/35', i > 0 ? 'mt-4' : 'mt-1')}>{it.group}</div>}
           <Link
-            key={it.href}
             href={it.href}
             aria-current={on ? 'page' : undefined}
             className={cn(
-              'group flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-[14px] font-semibold transition-colors',
+              'group relative flex items-center gap-3 rounded-[10px] px-3 py-2 text-[14px] font-semibold transition-colors',
               on ? 'bg-white/[0.09] text-white' : 'text-white/65 hover:bg-white/[0.05] hover:text-white',
             )}
           >
+            {on && <span className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-[#7CE0C8]" aria-hidden />}
             <I className={cn('h-[18px] w-[18px] shrink-0', on ? 'text-[#7CE0C8]' : 'text-white/50 group-hover:text-white/80')} strokeWidth={2} />
             {it.label}
           </Link>
+          </Fragment>
         );
       })}
     </nav>

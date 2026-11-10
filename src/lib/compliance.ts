@@ -62,7 +62,7 @@ async function loadBase(date: string, branch: number | null = null) {
     db.execute<{ assigned_to_id: number | null; total: number; stale: number }>(sql`
       select assigned_to_id, count(*)::int total,
         count(*) filter (where stage = 'yangi' and created_at < (${date}::date - interval '1 day'))::int stale
-      from leads where created_at::date between ${addDays(date, -7)} and ${date} ${andBranch('branch_id', branch)} group by 1`),
+      from leads where (created_at at time zone 'Asia/Tashkent')::date between ${addDays(date, -7)} and ${date} ${andBranch('branch_id', branch)} group by 1`),
     db.execute<{ debtors: number; reminded: number }>(sql`
       with bal as (
         select s.id,

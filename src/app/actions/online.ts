@@ -7,7 +7,7 @@ import { db } from '@/db';
 import { onlineCourses, courseModules, courseLessons, learners, courseOrders, promoCodes } from '@/db/schema';
 import { assertSection } from '@/lib/auth';
 import { run, str, req, int, bool } from '@/lib/action';
-import { normalizePhone } from '@/lib/format';
+import { money, normalizePhone } from '@/lib/format';
 import { addDays, today } from '@/lib/dates';
 
 function slugify(s: string) {
@@ -26,7 +26,7 @@ function slugify(s: string) {
 
 export async function saveOnlineCourse(id: number | null, fd: FormData) {
   return run(async () => {
-    await assertSection('onlineEdit');
+    const me = await assertSection('onlineEdit');
     const title = req(fd, 'title', 'Kurs nomi');
     let slug = slugify(str(fd, 'slug') || title);
     const clash = await db.select({ id: onlineCourses.id }).from(onlineCourses).where(eq(onlineCourses.slug, slug));
@@ -55,9 +55,19 @@ export async function saveOnlineCourse(id: number | null, fd: FormData) {
     if (v.coverUrl && !/^https:\/\//.test(v.coverUrl)) throw new Error("Muqova rasmi https:// bilan boshlanishi kerak.");
     if (!/^#[0-9a-fA-F]{6}$/.test(v.color)) v.color = '#008A70';
     if (id) {
+      const [old] = await db.select({ price: onlineCourses.price, oldPrice: onlineCourses.oldPrice, title: onlineCourses.title }).from(onlineCourses).where(eq(onlineCourses.id, id));
+      if (!old) throw new Error('Kurs topilmadi.');
+      // Narx — pul masalasi: faqat rahbar o'zgartiradi, har bir o'zgarish jurnalga va Telegramga
+      if (old.price !== v.price || old.oldPrice !== v.oldPrice) {
+        if (me.role !== 'rahbar') throw new Error("Kurs narxini faqat rahbar o'zgartiradi.");
+        const d = `${old.title}: ${money(old.price)} → ${money(v.price)}`;
+        await audit({ actorType: 'xodim', actorId: me.id, actorName: me.fullName, action: 'Kurs narxi o\'zgardi', detail: d });
+        await notifyTelegram(`💰 SmartEdu: kurs narxi o'zgardi\n${d}\nKim: ${me.fullName}`);
+      }
       await db.update(onlineCourses).set(v).where(eq(onlineCourses.id, id));
       return { id, message: 'Kurs saqlandi' };
     }
+    if (me.role !== 'rahbar' && v.price === 0) throw new Error("Bepul kursni faqat rahbar yaratadi.");
     const [c] = await db.insert(onlineCourses).values({ ...v, status: 'qoralama' }).returning({ id: onlineCourses.id });
     await db.insert(courseModules).values({ courseId: c.id, title: '1-modul. Kirish', position: 0 });
     return { id: c.id, message: 'Kurs yaratildi' };
@@ -132,7 +142,7 @@ export async function moveModule(id: number, dir: -1 | 1) {
 
 export async function saveLesson(moduleId: number, id: number | null, fd: FormData) {
   return run(async () => {
-    await assertSection('onlineEdit');
+    const me = await assertSection('onlineEdit');
     const [m] = await db.select().from(courseModules).where(eq(courseModules.id, moduleId));
     if (!m) throw new Error('Modul topilmadi.');
     const v = {
@@ -147,6 +157,11 @@ export async function saveLesson(moduleId: number, id: number | null, fd: FormDa
       courseId: m.courseId,
     };
     if (v.kind === 'video' && v.videoUrl && !/^https?:\/\//.test(v.videoUrl)) throw new Error("Video havolasi https:// bilan boshlanishi kerak.");
+    if (v.isFree && me.role !== 'rahbar') {
+      // Bepul (tanishuv) darslar — ko'pi bilan 2 ta; butun kursni bepul qilib qo'yib bo'lmaydi
+      const [f] = await db.execute<{ c: number }>(sql`select count(*)::int c from course_lessons where course_id = ${m.courseId} and is_free ${id ? sql`and id <> ${id}` : sql``}`);
+      if (f.c >= 2) throw new Error("Kursda ko'pi bilan 2 ta bepul dars bo'ladi (ko'proq — rahbar ruxsati bilan).");
+    }
     if (id) await db.update(courseLessons).set(v).where(eq(courseLessons.id, id));
     else {
       const [p] = await db.select({ p: sql<number>`coalesce(max(position), -1)::int` }).from(courseLessons).where(eq(courseLessons.moduleId, moduleId));
@@ -219,6 +234,16 @@ export async function createOrder(fd: FormData) {
     if (phone.length < 9) throw new Error("Telefon raqamni to'liq kiriting.");
     const name = req(fd, 'fullName', 'Ism').replace(/[\u0000-\u001f\u007f\u0085\u2028\u2029]/g, ' ').slice(0, 80);
     let [l] = await db.select().from(learners).where(eq(learners.phone, phone));
+    if (l?.passwordHash) {
+      // Raqamni boshqa odam oldindan ro'yxatdan o'tkazib qo'ygan bo'lishi mumkin (SMS tasdiqlash yo'q):
+      // ismi mos kelmasa — pullik kurs begona hisobga ochilib ketmasligi uchun rahbar tasdiqlaydi
+      const norm = (x: string) => x.toLowerCase().replace(/[^a-zа-яёўқғҳ]/gi, '');
+      const first = (x: string) => norm(x.trim().split(/\s+/)[0] ?? '');
+      const [paid] = await db.execute<{ c: number }>(sql`select count(*)::int c from course_orders where learner_id = ${l.id} and status = 'tolandi'`);
+      if (!paid.c && first(l.fullName) !== first(name) && !(u.role === 'rahbar' && str(fd, 'confirmAccount') === '1')) {
+        throw new Error(`Bu raqamda «${l.fullName}» nomli hisob bor. Xaridor bilan tekshiring — rahbar «tekshirdim» belgisini qo'yib saqlaydi.`);
+      }
+    }
     if (!l) [l] = await db.insert(learners).values({ fullName: name, phone, email: str(fd, 'email'), telegram: str(fd, 'telegram'), source: str(fd, 'source') }).returning();
     const code = str(fd, 'promoCode');
     const q = await priceFor(courseId, code);
@@ -358,6 +383,12 @@ export async function savePromo(id: number | null, fd: FormData) {
     // Katta chegirma (90%+ yoki 500 000 so'mdan ortiq) — faqat rahbar yaratadi
     if (me.role !== 'rahbar' && ((type === 'percent' && value >= 90) || (type !== 'percent' && value > 500_000))) {
       throw new Error("Bunday katta chegirmali promokodni faqat rahbar yaratadi.");
+    }
+    if (me.role !== 'rahbar' && type !== 'percent') {
+      // Summa bilan chegirma kurs narxining 90% idan oshmasin (arzon kursni bepul qilib qo'ymaslik uchun)
+      const cid = int(fd, 'courseId');
+      const [c] = await db.execute<{ p: number | null }>(sql`select min(price)::int p from online_courses where ${cid ? sql`id = ${cid}` : sql`status = 'sotuvda'`}`);
+      if (c?.p && value >= c.p * 0.9) throw new Error("Chegirma kurs narxining 90% idan oshmasin — bunday promokodni rahbar yaratadi.");
     }
     const v = {
       code,

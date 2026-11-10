@@ -1,4 +1,5 @@
 'use server';
+import { CASH_METHODS } from '@/lib/cashbox';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { transactions, reconciliations } from '@/db/schema';
@@ -47,7 +48,7 @@ export async function saveTransaction(id: number | null, fd: FormData) {
       category: req(fd, 'category', 'Toifa'),
       amount,
       date,
-      method: str(fd, 'method') || 'bank',
+      method: methodOf(fd),
       counterparty: str(fd, 'counterparty'),
       document: str(fd, 'document'),
       note: str(fd, 'note'),
@@ -117,4 +118,11 @@ export async function saveReconciliation(month: string, fd: FormData) {
     await audit({ actorType: 'xodim', actorId: u.id, actorName: u.fullName, action: 'Solishtirma saqlandi', detail: month });
     return { message: 'Solishtirma saqlandi' };
   });
+}
+
+/** Faqat ma'lum to'lov usullari — aks holda kassa qoldig'i tekshiruvini chetlab o'tish mumkin edi */
+function methodOf(fd: FormData) {
+  const m = str(fd, 'method') || 'bank';
+  if (!(CASH_METHODS as readonly string[]).includes(m)) throw new Error("To'lov usulini tanlang.");
+  return m;
 }

@@ -118,7 +118,9 @@ export const courses = pgTable('courses', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const groups = pgTable('groups', {
+export const groups = pgTable(
+  'groups',
+  {
   id: serial('id').primaryKey(),
   name: text('name').notNull(),
   courseId: integer('course_id')
@@ -137,7 +139,9 @@ export const groups = pgTable('groups', {
   startDate: date('start_date'),
   active: boolean('active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+  },
+  (t) => [index('groups_teacher_idx').on(t.teacherId)],
+);
 
 export const students = pgTable(
   'students',
@@ -235,6 +239,7 @@ export const attendance = pgTable(
     uniqueIndex('att_uq').on(t.groupId, t.studentId, t.date),
     index('att_date_idx').on(t.date),
     index('att_student_idx').on(t.studentId),
+    index('att_student_date_idx').on(t.studentId, t.date),
   ],
 );
 
@@ -329,6 +334,8 @@ export const leads = pgTable(
   },
   (t) => [
     index('leads_stage_idx').on(t.stage),
+    index('leads_assigned_idx').on(t.assignedToId),
+    index('leads_updated_idx').on(t.updatedAt),
     index('leads_phone_idx').on(t.phone),
     index('leads_source_idx').on(t.source, t.createdAt),
     uniqueIndex('leads_external_uq').on(t.externalId),
@@ -413,7 +420,7 @@ export const notes = pgTable(
     authorId: integer('author_id').references(() => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('notes_entity_idx').on(t.entityType, t.entityId), index('notes_kind_idx').on(t.kind)],
+  (t) => [index('notes_entity_idx').on(t.entityType, t.entityId), index('notes_kind_idx').on(t.kind), index('notes_author_idx').on(t.authorId, t.createdAt)],
 );
 
 export const grades = pgTable(
@@ -765,6 +772,8 @@ export const charges = pgTable(
   },
   (t) => [
     index('charges_student_idx').on(t.studentId),
+    index('charges_sub_idx').on(t.subscriptionId),
+    index('charges_sgm_idx').on(t.studentId, t.groupId, t.month).where(sql`kind = 'oylik'`),
     index('charges_date_idx').on(t.date),
     uniqueIndex('charges_att_uq').on(t.attendanceId).where(sql`attendance_id is not null`),
     uniqueIndex('charges_month_uq').on(t.enrollmentId, t.month).where(sql`kind = 'oylik'`),

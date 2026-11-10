@@ -219,7 +219,7 @@ function GroupDrawer({ g, d, manage, role, groupOpts, onEdit, onClose }: { g: G;
               <Pencil className="h-4 w-4" /> Tahrirlash
             </Button>
             {g.active ? (
-              <ActionButton action={() => closeGroup(g.id)} confirm="Guruh yopilsinmi? O'quvchilar guruhda qoladi, yangi dars belgilanmaydi.">
+              <ActionButton action={() => closeGroup(g.id)} confirm="Guruh yopilsinmi? O'quvchilar guruhdan chiqariladi, keyingi oylardan pul yechilmaydi.">
                 <Archive className="h-4 w-4" /> Yopish
               </ActionButton>
             ) : (

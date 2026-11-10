@@ -1,4 +1,5 @@
 'use client';
+import { Ago } from '@/components/ago';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
@@ -8,7 +9,7 @@ import { Modal } from '@/components/modal';
 import { ActionButton, ActionForm } from '@/components/action-form';
 import { useToast } from '@/components/toast';
 import { deleteTask, saveTask, setTaskStatus } from '@/app/actions/tasks';
-import { fmtShort, relative, today } from '@/lib/dates';
+import { fmtShort, today } from '@/lib/dates';
 
 type T = { entityType: string | null; entityId: number | null; autoKey: string | null; id: number; title: string; description: string | null; assigneeId: number | null; assignee: string | null; creatorId: number | null; creator: string | null; dueDate: string | null; status: 'yangi' | 'jarayonda' | 'bajarildi'; priority: 'past' | 'orta' | 'yuqori'; doneAt: string | null; createdAt: string };
 
@@ -134,7 +135,7 @@ export function TasksView({ rows, staff, meId, isBoss, canAssign, openNew }: { r
                             </span>
                           )}
                           {r.creator && r.creatorId !== r.assigneeId && <span>bergan: {r.creator}</span>}
-                          {r.doneAt && <span>{relative(r.doneAt)}</span>}
+                          {r.doneAt && <span><Ago d={r.doneAt} /></span>}
                         </div>
                         <div className="mt-3 flex flex-wrap gap-1.5">
                           {r.status === 'yangi' && (

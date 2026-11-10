@@ -22,7 +22,7 @@ export default async function Cabinet() {
       where o.learner_id = ${l.id} and o.status = 'tolandi' and (o.access_until is null or o.access_until >= current_date)
       group by c.id order by last desc nulls last`),
     db.execute<{ id: number; title: string; amount: number; created: string }>(sql`
-      select o.id, c.title, o.amount, o.created_at::date::text created from course_orders o join online_courses c on c.id = o.course_id
+      select o.id, c.title, o.amount, (o.created_at at time zone 'Asia/Tashkent')::date::text created from course_orders o join online_courses c on c.id = o.course_id
       where o.learner_id = ${l.id} and o.status = 'kutilmoqda' order by o.id desc`),
     db.execute<{ email: string | null; telegram: string | null }>(sql`select email, telegram from learners where id = ${l.id}`),
   ]);

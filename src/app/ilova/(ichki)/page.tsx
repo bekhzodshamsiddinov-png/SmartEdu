@@ -6,7 +6,7 @@ import { currentChild } from '@/lib/family';
 import { childOverview } from '@/lib/family-data';
 import { getSettings } from '@/lib/settings';
 import { money } from '@/lib/format';
-import { fmtDate, fmtShort, WEEKDAYS_FULL } from '@/lib/dates';
+import { daysBetween, fmtDate, fmtShort, today, WEEKDAYS_FULL } from '@/lib/dates';
 
 export const metadata = { title: 'Bosh sahifa' };
 
@@ -70,7 +70,7 @@ export default async function Home() {
       {/* Abonement */}
       {o.subscriptions.map((x) => {
         const total = x.kind === 'dars' ? x.lessons_total : Math.max(1, (Date.parse(x.end_date) - Date.parse(x.start_date)) / 864e5 + 1);
-        const left = x.kind === 'dars' ? x.lessons_total - x.used : Math.max(0, Math.round((Date.parse(x.end_date) - Date.now()) / 864e5) + 1);
+        const left = x.kind === 'dars' ? x.lessons_total - x.used : Math.max(0, daysBetween(today(), x.end_date) + 1);
         const pc = Math.max(4, Math.min(100, Math.round((left / total) * 100)));
         return (
           <div key={x.id} className="rounded-[24px] bg-[#FFC83D] p-4 text-[#0C1631]">

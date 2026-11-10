@@ -29,20 +29,20 @@ export default async function StaffPage() {
     db.execute<{ uid: number; received: string; calls: number; parent: number }>(sql`
       select u.id uid,
         (select coalesce(sum(amount),0) from payments p where p.cancelled_at is null and p.received_by_id = u.id and p.paid_at between ${from} and ${to}) received,
-        (select count(*) from notes n where n.author_id = u.id and n.kind = 'qongiroq' and n.created_at::date between ${from} and ${to})::int calls,
-        (select count(*) from notes n where n.author_id = u.id and n.kind = 'ota_ona' and n.created_at::date between ${from} and ${to})::int parent
+        (select count(*) from notes n where n.author_id = u.id and n.kind = 'qongiroq' and (n.created_at at time zone 'Asia/Tashkent')::date between ${from} and ${to})::int calls,
+        (select count(*) from notes n where n.author_id = u.id and n.kind = 'ota_ona' and (n.created_at at time zone 'Asia/Tashkent')::date between ${from} and ${to})::int parent
       from users u where u.role in ('admin','rahbar','bugalter')`),
     db.execute<{ uid: number; leads: number; paid: number; calls: number }>(sql`
       select u.id uid,
-        (select count(*) from leads l where l.assigned_to_id = u.id and l.created_at::date between ${from} and ${to})::int leads,
-        (select count(*) from leads l where l.assigned_to_id = u.id and l.stage = 'tolov_qildi' and l.updated_at::date between ${from} and ${to})::int paid,
-        (select count(*) from notes n where n.author_id = u.id and n.entity_type = 'lead' and n.created_at::date between ${from} and ${to})::int calls
+        (select count(*) from leads l where l.assigned_to_id = u.id and (l.created_at at time zone 'Asia/Tashkent')::date between ${from} and ${to})::int leads,
+        (select count(*) from leads l where l.assigned_to_id = u.id and l.stage = 'tolov_qildi' and (l.updated_at at time zone 'Asia/Tashkent')::date between ${from} and ${to})::int paid,
+        (select count(*) from notes n where n.author_id = u.id and n.entity_type = 'lead' and (n.created_at at time zone 'Asia/Tashkent')::date between ${from} and ${to})::int calls
       from users u where u.role in ('sotuv','marketing')`),
     db.execute<{ uid: number; open: number; overdue: number; done: number }>(sql`
       select assignee_id uid,
         count(*) filter (where status <> 'bajarildi')::int open,
         count(*) filter (where status <> 'bajarildi' and due_date < ${t})::int overdue,
-        count(*) filter (where status = 'bajarildi' and done_at::date between ${from} and ${to})::int done
+        count(*) filter (where status = 'bajarildi' and (done_at at time zone 'Asia/Tashkent')::date between ${from} and ${to})::int done
       from tasks where assignee_id is not null group by 1`),
     db.execute<{ uid: number; c: number; last: string }>(sql`select user_id uid, count(*)::int c, max(date)::text last from staff_reports where date between ${from} and ${to} group by 1`),
   ]);

@@ -87,7 +87,7 @@ export async function graduateHistory(studentId: number) {
       select c.id, c.date::text, c.channel, c.note, u.full_name by from graduate_contacts c left join users u on u.id = c.by_id where c.student_id = ${studentId} order by c.date desc, c.id desc limit 50`),
     db.execute<{ id: number; type: string; title: string; date: string }>(sql`select id, type, title, date::text from results where student_id = ${studentId} order by date desc limit 20`),
     db.execute<{ id: number; name: string; stage: string; created: string }>(sql`
-      select id, full_name name, stage::text, to_char(created_at, 'YYYY-MM-DD') created from leads where referred_by_student_id = ${studentId} order by created_at desc limit 30`),
+      select id, full_name name, stage::text, to_char(created_at at time zone 'Asia/Tashkent', 'YYYY-MM-DD') created from leads where referred_by_student_id = ${studentId} order by created_at desc limit 30`),
   ]);
   return { contacts: [...contacts], wins: [...wins], refs: [...refs] };
 }

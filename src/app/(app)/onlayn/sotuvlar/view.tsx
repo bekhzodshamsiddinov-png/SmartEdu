@@ -265,6 +265,10 @@ function OrderForm({ courses, learners, preset, onDone }: { courses: { id: numbe
       <Field label="Izoh">
         <input name="note" className="field" placeholder="Masalan: chek raqami" />
       </Field>
+      <label className="flex items-start gap-2 text-[13px] text-fg-muted">
+        <input type="checkbox" name="confirmAccount" value="1" className="mt-0.5 h-4 w-4 accent-[#0E7C6B]" />
+        <span>Bu raqamda boshqa ismli hisob bo&apos;lsa ham, xaridor shu hisob egasi ekanini tekshirdim (faqat rahbar)</span>
+      </label>
     </ActionForm>
   );
 }

@@ -9,7 +9,7 @@ import { money, num } from '@/lib/format';
 import { ORDER_STATUS, COURSE_STATUS } from '@/lib/constants';
 import { Badge, Card, CardHeader, Empty, LinkButton, PageHeader, Stat } from '@/components/ui';
 import { OnlineTabs } from '@/components/online/tabs';
-import { DayBars } from '@/components/charts/day-bars';
+import { DayBars } from '@/components/charts/lazy';
 
 export const metadata = { title: 'Onlayn kurslar' };
 
@@ -24,7 +24,7 @@ export default async function OnlineHome() {
         (select coalesce(sum(amount),0) from course_orders where status = 'tolandi' and paid_at between ${monthStart(m)} and ${monthEnd(m)}) revenue,
         (select count(*) from course_orders where status = 'tolandi' and paid_at between ${monthStart(m)} and ${monthEnd(m)})::int sales,
         (select count(*) from learners)::int learners,
-        (select count(*) from learners where created_at::date between ${monthStart(m)} and ${monthEnd(m)})::int new_learners,
+        (select count(*) from learners where (created_at at time zone 'Asia/Tashkent')::date between ${monthStart(m)} and ${monthEnd(m)})::int new_learners,
         (select count(*) from online_courses where status = 'sotuvda')::int courses`),
     db.execute<{ d: string; s: string; c: number }>(sql`select paid_at::text d, sum(amount) s, count(*)::int c from course_orders where status = 'tolandi' and paid_at between ${from30} and ${t} group by 1`),
     db.execute<{ id: number; title: string; color: string; status: string; price: number; sales: number; revenue: string; lessons: number }>(sql`
@@ -34,7 +34,7 @@ export default async function OnlineHome() {
         (select count(*) from course_lessons l where l.course_id = c.id)::int lessons
       from online_courses c order by revenue desc, c.id desc limit 6`),
     db.execute<{ id: number; name: string; course: string; amount: number; status: string; created: string }>(sql`
-      select o.id, l.full_name name, c.title course, o.amount, o.status, o.created_at::date::text created
+      select o.id, l.full_name name, c.title course, o.amount, o.status, (o.created_at at time zone 'Asia/Tashkent')::date::text created
       from course_orders o join learners l on l.id = o.learner_id join online_courses c on c.id = o.course_id order by o.id desc limit 8`),
     db.execute<{ c: number; s: string }>(sql`select count(*)::int c, coalesce(sum(amount),0) s from course_orders where status = 'kutilmoqda'`),
   ]);
