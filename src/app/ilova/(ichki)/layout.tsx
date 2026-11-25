@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { currentChild, getChildren } from '@/lib/family';
 import { getSettings } from '@/lib/settings';
 import { BrandMark } from '@/components/brand-mark';
-import { BottomNav } from './nav';
+import { AppBack, BottomNav } from './nav';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +15,7 @@ export default async function Inner({ children }: { children: ReactNode }) {
   return (
     <div className="mx-auto min-h-[100dvh] max-w-md pb-[calc(84px+env(safe-area-inset-bottom))]">
       <header className="sticky top-0 z-30 flex items-center gap-3 bg-[#F2F4F9]/90 px-4 pb-3 pt-[calc(12px+env(safe-area-inset-top))] backdrop-blur">
+        <AppBack />
         <BrandMark className="h-9 w-9 shrink-0" />
         <div className="min-w-0 flex-1 leading-tight">
           <div className="truncate text-[11px] font-bold uppercase tracking-[0.18em] text-[#0B78A6]">{s.centerName}</div>

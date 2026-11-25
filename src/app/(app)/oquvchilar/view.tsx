@@ -3,7 +3,7 @@ import { Ago } from '@/components/ago';
 import { ResultForm, ResultList, type ResultRow } from '@/components/results';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { Search, UserPlus, Users, Wallet, Pencil, ArrowRightLeft, Phone, Plus, Trash2, Download, LogOut as LeaveIcon, Receipt, Link2, FileText, Award, Coins, Copy, Ticket } from 'lucide-react';
+import { Search, UserPlus, Users, Wallet, Pencil, ArrowRightLeft, Phone, Plus, Trash2, Download, LogOut as LeaveIcon, Receipt, Link2, FileText, Award, Coins, Copy, Ticket, FileSpreadsheet } from 'lucide-react';
 import type { Role } from '@/db/schema';
 import { Avatar, Badge, Button, Card, Empty, Field, PageHeader, cn } from '@/components/ui';
 import { Drawer, Modal } from '@/components/modal';
@@ -161,6 +161,11 @@ export function StudentsView({
             <Button variant="secondary" onClick={exportCsv}>
               <Download className="h-4 w-4" /> Excel (CSV)
             </Button>
+            {['rahbar', 'admin'].includes(role) && (
+              <a href="/yuklash" className="inline-flex h-10 items-center gap-2 rounded-field border border-line-strong bg-white px-4 text-sm font-bold hover:bg-canvas">
+                <FileSpreadsheet className="h-4 w-4" /> Excel&apos;dan yuklash
+              </a>
+            )}
             {canEdit && (
               <Button onClick={() => setCreating(true)}>
                 <UserPlus className="h-4 w-4" /> O&apos;quvchi qo&apos;shish
@@ -755,7 +760,7 @@ function ProfileDrawer({ p, groups, role, showMoney, onClose }: { p: Profile; gr
 
         {tab === 'natija' && (
           <Section title="Yutuqlari" action={role !== 'bugalter' && role !== 'sotuv' && <Button size="sm" variant="ghost" onClick={() => setModal('result')}><Plus className="h-4 w-4" /> Yutuq qo&apos;shish</Button>}>
-            <ResultList rows={p.results} canEdit={['rahbar', 'admin'].includes(role)} />
+            <ResultList rows={p.results} canEdit={["rahbar", "admin"].includes(role)} canAttach={!["bugalter", "sotuv"].includes(role)} />
           </Section>
         )}
       </div>

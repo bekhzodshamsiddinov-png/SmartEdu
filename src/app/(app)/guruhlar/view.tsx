@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { Layers, Plus, Pencil, Users, Clock, DoorOpen, ArrowRightLeft, Archive, RotateCcw, CalendarCheck, Send } from 'lucide-react';
+import { Layers, Plus, Pencil, Users, Clock, DoorOpen, ArrowRightLeft, Archive, RotateCcw, CalendarCheck, Send, FileSpreadsheet } from 'lucide-react';
 import type { Role } from '@/db/schema';
 import { Avatar, Badge, Button, Card, Empty, Field, LinkButton, PageHeader, Progress, cn } from '@/components/ui';
 import { Drawer, Modal } from '@/components/modal';
@@ -48,9 +48,14 @@ export function GroupsView({ groups, courses, teachers, groupOpts, detail, role,
         actions={
           manage &&
           (tab === 'guruhlar' ? (
-            <Button onClick={() => setEdit('new')}>
-              <Plus className="h-4 w-4" /> Guruh ochish
-            </Button>
+            <>
+              <Link href="/yuklash" className="inline-flex h-10 items-center gap-2 rounded-field border border-line-strong bg-white px-4 text-sm font-bold hover:bg-canvas">
+                <FileSpreadsheet className="h-4 w-4" /> Excel&apos;dan yuklash
+              </Link>
+              <Button onClick={() => setEdit('new')}>
+                <Plus className="h-4 w-4" /> Guruh ochish
+              </Button>
+            </>
           ) : (
             role === 'rahbar' && (
               <Button onClick={() => setCourse('new')}>

@@ -8,6 +8,7 @@ import {
   date,
   jsonb,
   pgEnum,
+  customType,
   bigint,
   uniqueIndex,
   index,
@@ -464,6 +465,26 @@ export const results = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('results_student_idx').on(t.studentId), index('results_date_idx').on(t.date)],
+);
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' });
+
+/** Yutuqqa biriktirilgan fayllar: sertifikat, diplom, loyiha rasmi (PDF yoki rasm, 3 MB gacha) */
+export const resultFiles = pgTable(
+  'result_files',
+  {
+    id: serial('id').primaryKey(),
+    resultId: integer('result_id')
+      .notNull()
+      .references(() => results.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    mime: text('mime').notNull(),
+    size: integer('size').notNull(),
+    data: bytea('data').notNull(),
+    createdById: integer('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('result_files_result_idx').on(t.resultId)],
 );
 
 export const graduates = pgTable('graduates', {

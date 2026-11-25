@@ -1,15 +1,20 @@
 'use client';
-import { useState } from 'react';
-import { ExternalLink, Globe, Medal, Trash2 } from 'lucide-react';
+import { useRef, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import { Download, ExternalLink, FileText, Globe, Link2, Medal, Paperclip, Trash2, X } from 'lucide-react';
 import { Badge, Field, cn } from '@/components/ui';
 import { ActionButton, ActionForm } from '@/components/action-form';
 import { MoneyInput } from '@/components/money-input';
-import { addResult, deleteResult, toggleResultPublic } from '@/app/actions/results';
+import { addResult, addResultFiles, deleteResult, deleteResultFile, setResultLink, toggleResultPublic } from '@/app/actions/results';
+import { Modal } from '@/components/modal';
+import { useToast } from '@/components/toast';
+import { ACCEPT, FilePick, prepareFiles } from '@/components/file-pick';
 import { RESULT_LEVELS, RESULT_META, RESULT_PLACES, RESULT_TYPES } from '@/lib/constants';
 import { money } from '@/lib/format';
 import { fmtDate, today } from '@/lib/dates';
 
-export type ResultRow = { id: number; type: string; title: string; amount: number | null; date: string; note: string | null; place: string | null; level: string | null; link: string | null; isPublic: boolean };
+export type ResultFile = { id: number; name: string; mime: string; size: number };
+export type ResultRow = { id: number; type: string; title: string; amount: number | null; date: string; note: string | null; place: string | null; level: string | null; link: string | null; isPublic: boolean; files?: ResultFile[] };
 
 export const placeLabel = (k: string | null) => RESULT_PLACES.find((p) => p.k === k)?.l ?? null;
 export const levelLabel = (k: string | null) => RESULT_LEVELS.find((p) => p.k === k)?.l ?? null;
@@ -74,9 +79,10 @@ export function ResultForm({ studentId, onDone }: { studentId: number; onDone?: 
           <div />
         )}
       </div>
-      <Field label="Isbot havolasi" hint="Play Market, YouTube, sertifikat yoki yangilik sahifasi (ixtiyoriy)">
+      <Field label="Loyiha yoki isbot havolasi" hint="Sayt, GitHub, Play Market, YouTube, Telegram bot yoki yangilik sahifasi (ixtiyoriy)">
         <input name="link" type="url" inputMode="url" className="field" placeholder="https://" maxLength={400} />
       </Field>
+      <FilePick label="Sertifikat, diplom yoki loyiha rasmi (ixtiyoriy)" />
       <Field label="Izoh">
         <input name="note" className="field" maxLength={400} />
       </Field>
@@ -91,7 +97,7 @@ export function ResultForm({ studentId, onDone }: { studentId: number; onDone?: 
   );
 }
 
-export function ResultList({ rows, canEdit, empty }: { rows: ResultRow[]; canEdit: boolean; empty?: string }) {
+export function ResultList({ rows, canEdit, canAttach = canEdit, empty }: { rows: ResultRow[]; canEdit: boolean; canAttach?: boolean; empty?: string }) {
   if (!rows.length) return <p className="px-4 py-4 text-sm text-fg-muted">{empty ?? "Musobaqa, Play Market'dagi ilova, sotilgan loyiha, YouTube daromadi, ishga kirish — hammasini shu yerga yozing."}</p>;
   return (
     <ul className="divide-y divide-line">
@@ -116,11 +122,7 @@ export function ResultList({ rows, canEdit, empty }: { rows: ResultRow[]; canEdi
               {r.amount ? `, ${money(r.amount)}` : ''}
               {r.note ? `. ${r.note}` : ''}
             </div>
-            {r.link && (
-              <a href={r.link} target="_blank" rel="noopener noreferrer nofollow" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-brand hover:underline">
-                <ExternalLink className="h-3 w-3" /> Isbot
-              </a>
-            )}
+            <ResultExtras r={r} canEdit={canEdit} canAttach={canAttach} />
           </div>
           {canEdit && (
             <div className="flex shrink-0 items-start gap-1">
@@ -135,5 +137,104 @@ export function ResultList({ rows, canEdit, empty }: { rows: ResultRow[]; canEdi
         </li>
       ))}
     </ul>
+  );
+}
+
+const isImg = (m: string) => m.startsWith('image/');
+export const fileUrl = (id: number, dl = false) => `/api/yutuq-fayl/${id}${dl ? '?yukla=1' : ''}`;
+
+/** Yutuq ostidagi havola va fayllar (sertifikat, loyiha rasmlari) + qo'shish tugmalari */
+export function ResultExtras({ r, canEdit, canAttach }: { r: ResultRow; canEdit: boolean; canAttach: boolean }) {
+  const router = useRouter();
+  const toast = useToast();
+  const input = useRef<HTMLInputElement>(null);
+  const [pending, start] = useTransition();
+  const [linkOpen, setLinkOpen] = useState(false);
+  const files = r.files ?? [];
+  let host = '';
+  try {
+    host = r.link ? new URL(r.link).hostname.replace(/^www\./, '') : '';
+  } catch {}
+
+  async function upload(list: FileList | null) {
+    if (!list?.length) return;
+    const p = await prepareFiles(list, 6 - files.length);
+    if (p.error && !p.files.length) return toast(p.error, 'err');
+    const fd = new FormData();
+    p.files.forEach((f) => fd.append('files', f));
+    start(async () => {
+      const res = await addResultFiles(r.id, fd);
+      if (res.ok) {
+        toast(res.message ?? 'Yuklandi');
+        router.refresh();
+      } else toast(res.error, 'err');
+    });
+    if (input.current) input.current.value = '';
+  }
+
+  return (
+    <>
+      {(r.link || files.length > 0) && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {r.link && (
+            <a href={r.link} target="_blank" rel="noopener noreferrer nofollow" className="inline-flex h-8 max-w-[240px] items-center gap-1.5 rounded-full border border-line bg-white px-3 text-xs font-semibold text-brand hover:border-brand">
+              <ExternalLink className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{host || 'Havola'}</span>
+            </a>
+          )}
+          {files.map((f) => (
+            <span key={f.id} className="group relative inline-flex items-center">
+              <a
+                href={fileUrl(f.id)}
+                target="_blank"
+                rel="noopener"
+                title={f.name}
+                className={cn('inline-flex items-center gap-1.5 overflow-hidden rounded-xl border border-line bg-white text-xs font-semibold hover:border-brand', isImg(f.mime) ? 'h-14 w-14 justify-center' : 'h-8 max-w-[200px] px-3')}
+              >
+                {isImg(f.mime) ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={fileUrl(f.id)} alt={f.name} loading="lazy" className="h-full w-full object-cover" />
+                ) : (
+                  <>
+                    <FileText className="h-3.5 w-3.5 shrink-0 text-bad" /> <span className="truncate">{f.name}</span>
+                  </>
+                )}
+              </a>
+              <a href={fileUrl(f.id, true)} className="ml-0.5 grid h-6 w-6 place-items-center rounded-full text-fg-faint hover:text-brand" title="Yuklab olish" aria-label={`${f.name} ni yuklab olish`}>
+                <Download className="h-3.5 w-3.5" />
+              </a>
+              {canEdit && (
+                <ActionButton size="icon" variant="ghost" action={() => deleteResultFile(f.id)} confirm="Fayl o'chirilsinmi?" title="Faylni o'chirish" className="!h-6 !w-6">
+                  <X className="h-3.5 w-3.5" />
+                </ActionButton>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+      {canAttach && (
+        <div className="mt-1.5 flex flex-wrap gap-3">
+          {files.length < 6 && (
+            <>
+              <input ref={input} type="file" multiple accept={ACCEPT} className="sr-only" onChange={(e) => upload(e.target.files)} aria-label="Sertifikat yuklash" />
+              <button type="button" onClick={() => input.current?.click()} disabled={pending} className="inline-flex items-center gap-1 text-xs font-bold text-fg-muted hover:text-brand disabled:opacity-50">
+                <Paperclip className="h-3.5 w-3.5" /> {pending ? 'Yuklanmoqda...' : 'Sertifikat / rasm'}
+              </button>
+            </>
+          )}
+          <button type="button" onClick={() => setLinkOpen(true)} className="inline-flex items-center gap-1 text-xs font-bold text-fg-muted hover:text-brand">
+            <Link2 className="h-3.5 w-3.5" /> {r.link ? 'Havolani o\'zgartirish' : 'Loyiha havolasi'}
+          </button>
+        </div>
+      )}
+      <Modal open={linkOpen} onClose={() => setLinkOpen(false)} title="Loyiha havolasi" size="sm">
+        {linkOpen && (
+          <ActionForm action={setResultLink.bind(null, r.id)} onDone={() => setLinkOpen(false)} onCancel={() => setLinkOpen(false)}>
+            <Field label="Havola" hint="Sayt, GitHub, Play Market, YouTube yoki Telegram bot. Bo'sh qoldirilsa havola o'chadi.">
+              <input name="link" type="url" inputMode="url" defaultValue={r.link ?? ''} className="field" placeholder="https://" maxLength={400} autoFocus />
+            </Field>
+          </ActionForm>
+        )}
+      </Modal>
+    </>
   );
 }

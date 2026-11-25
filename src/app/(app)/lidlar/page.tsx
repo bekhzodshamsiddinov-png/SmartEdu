@@ -85,6 +85,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       touches={touches.map((t) => ({ ...t, createdAt: t.createdAt.toISOString() }))}
       campaigns={campaigns}
       canReport={['rahbar', 'admin', 'marketing'].includes(user.role)}
+      canImport={['rahbar', 'admin'].includes(user.role)}
       courses={copts}
       sales={sales}
       groups={gopts}

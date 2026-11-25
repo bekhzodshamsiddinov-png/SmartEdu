@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { CalendarCheck2, Home, QrCode, Wallet } from 'lucide-react';
+import { BackButton, useNavStack } from '@/components/shell/back';
 
 const ITEMS = [
   { href: '/ilova', l: 'Bosh', I: Home },
@@ -31,4 +32,10 @@ export function BottomNav() {
       </div>
     </nav>
   );
+}
+
+/** Ota-ona ilovasidagi "Orqaga" tugmasi (bosh sahifada ko'rinmaydi) */
+export function AppBack() {
+  useNavStack();
+  return <BackButton home="/ilova" className="h-10 w-10 justify-center rounded-full border-0 bg-white px-0 shadow-sm sm:px-0 [&>span]:hidden" />;
 }

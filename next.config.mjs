@@ -2,7 +2,8 @@
 const nextConfig = {
   poweredByHeader: false,
   serverExternalPackages: ['postgres'],
-  experimental: { serverActions: { bodySizeLimit: '1mb' } },
+  // 4 MB: yutuq sertifikatlari (3 MB gacha fayl) uchun; Vercel so'rov chegarasi 4.5 MB
+  experimental: { serverActions: { bodySizeLimit: '4mb' } },
   async headers() {
     return [
       {

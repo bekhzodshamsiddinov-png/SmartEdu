@@ -1,5 +1,6 @@
 import { desc, eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
+import { filesFor } from '@/lib/result-files';
 import { students, enrollments, groups, courses, payments, attendance, grades, notes, results, users } from '@/db/schema';
 import { requireSection } from '@/lib/auth';
 import { seesMoney } from '@/lib/roles';
@@ -100,6 +101,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
           from subscription_plans p left join courses c on c.id = p.course_id where p.active order by p.position, p.price`),
       ]);
       const b = balances.get(pid);
+      const rfiles = await filesFor(res.map((r) => r.id));
       profile = {
         student: (({ cabinetHash, telegramChatId, telegramLinkCode: _c, telegramLinkExpires: _e, ...rest }) => ({ ...rest, createdAt: s.createdAt.toISOString(), cabinet: cabinetHash ? 1 : 0, telegram: telegramChatId ? 1 : 0 }))(s),
         enrollments: (byStudent.get(pid) ?? []).map((e) => ({ id: e.id, group: e.group, groupId: e.groupId, course: e.course, color: e.color, fee: showMoney ? e.fee : 0, startDate: e.startDate, endDate: e.endDate, active: e.active })),
@@ -107,7 +109,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
         attendance: att,
         grades: grd,
         notes: nts.map((n) => ({ ...n, createdAt: n.createdAt.toISOString() })),
-        results: res.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })),
+        results: res.map((r) => ({ ...r, createdAt: r.createdAt.toISOString(), files: rfiles.get(r.id) ?? [] })),
         balance: showMoney ? { charged: b?.charged ?? 0, paid: b?.paid ?? 0, balance: b?.balance ?? 0, fee: b?.monthlyFee ?? 0 } : { charged: 0, paid: 0, balance: 0, fee: 0 },
         ledger: showMoney ? led.map((r) => ({ ...r, amount: Number(r.amount) })) : [],
         freezeReasons: frz.map((r) => r.title),

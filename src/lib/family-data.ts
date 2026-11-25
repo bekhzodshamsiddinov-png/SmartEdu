@@ -22,7 +22,10 @@ export async function childOverview(sid: number) {
         (select count(*) from charges c where c.subscription_id = ss.id and c.kind = 'abonement_dars')::int used
       from student_subscriptions ss where ss.student_id = ${sid} and ss.status = 'faol' and ss.end_date >= ${t} order by ss.end_date`),
     db.execute<{ period: string; score: number; comment: string | null }>(sql`select period, score, comment from grades where student_id = ${sid} order by period desc, id desc limit 5`),
-    db.execute<{ type: string; title: string; date: string; place: string | null }>(sql`select type, title, date::text, place from results where student_id = ${sid} order by date desc, id desc limit 6`),
+    db.execute<{ type: string; title: string; date: string; place: string | null; link: string | null; files: { id: number; name: string; mime: string }[] | null }>(sql`
+      select r.type, r.title, r.date::text, r.place, r.link,
+        (select json_agg(json_build_object('id', f.id, 'name', f.name, 'mime', f.mime) order by f.id) from result_files f where f.result_id = r.id) files
+      from results r where r.student_id = ${sid} order by r.date desc, r.id desc limit 6`),
   ]);
   const present = att.filter((a) => a.status === 'keldi' || a.status === 'kechikdi').length;
   return {

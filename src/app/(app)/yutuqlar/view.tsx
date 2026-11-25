@@ -2,10 +2,10 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ExternalLink, Globe, Medal, Plus, Search, Trophy } from 'lucide-react';
+import { Globe, Medal, Plus, Search, Trophy } from 'lucide-react';
 import { Badge, Button, Card, Empty, PageHeader, Stat, cn } from '@/components/ui';
 import { Modal } from '@/components/modal';
-import { ResultForm, levelLabel, placeLabel } from '@/components/results';
+import { ResultExtras, ResultForm, levelLabel, placeLabel, type ResultFile } from '@/components/results';
 import { ActionButton } from '@/components/action-form';
 import { searchStudentsForResult, toggleResultPublic } from '@/app/actions/results';
 import { RESULT_META } from '@/lib/constants';
@@ -14,7 +14,7 @@ import { fmtDate } from '@/lib/dates';
 
 type R = {
   id: number; type: string; title: string; amount: number | null; date: string; note: string | null; place: string | null; level: string | null; link: string | null; isPublic: boolean;
-  student_id: number; name: string; status: string; course: string | null; color: string | null;
+  student_id: number; name: string; status: string; course: string | null; color: string | null; files: ResultFile[];
 };
 
 const INCOME = ['Loyiha sotdi', 'Birinchi zakaz', 'YouTube daromad', 'Grant'];
@@ -120,11 +120,7 @@ export function AchievementsView({ rows, year, years, canAdd, canEdit }: { rows:
                       {r.amount ? `, ${money(r.amount)}` : ''}
                     </span>
                   </div>
-                  {r.link && (
-                    <a href={r.link} target="_blank" rel="noopener noreferrer nofollow" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-brand hover:underline">
-                      <ExternalLink className="h-3 w-3" /> Isbot
-                    </a>
-                  )}
+                  <ResultExtras r={r} canEdit={canEdit} canAttach={canAdd} />
                 </div>
                 {canEdit && (
                   <ActionButton size="icon" variant="ghost" action={() => toggleResultPublic(r.id)} title={r.isPublic ? 'Saytdan olish' : "Saytda ko'rsatish"}>

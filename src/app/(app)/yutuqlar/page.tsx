@@ -4,6 +4,7 @@ import { requireSection } from '@/lib/auth';
 import { andBranch, getBranchScope } from '@/lib/branch';
 import { today } from '@/lib/dates';
 import { AchievementsView } from './view';
+import { filesFor } from '@/lib/result-files';
 
 export const metadata = { title: 'Yutuqlar' };
 
@@ -26,10 +27,11 @@ export default async function AchievementsPage({ searchParams }: { searchParams:
       ${year !== 'hammasi' ? sql`and extract(year from r.date) = ${Number(year)}` : sql``}
       ${mine ? sql`and exists (select 1 from enrollments e join groups g on g.id = e.group_id where e.student_id = s.id and (g.teacher_id = ${user.id} or g.support_id = ${user.id}))` : sql``}
     order by r.date desc, r.id desc limit 500`);
+  const files = await filesFor(rows.map((r) => r.id));
   const years = await db.execute<{ y: string }>(sql`select distinct extract(year from date)::int::text y from results order by 1 desc`);
   return (
     <AchievementsView
-      rows={[...rows]}
+      rows={rows.map((r) => ({ ...r, files: files.get(r.id) ?? [] }))}
       year={year}
       years={[...new Set([today().slice(0, 4), ...years.map((y) => y.y)])]}
       canAdd={!['bugalter', 'sotuv'].includes(user.role)}

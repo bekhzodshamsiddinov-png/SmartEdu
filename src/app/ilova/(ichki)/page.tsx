@@ -131,7 +131,7 @@ export default async function Home() {
           <h2 className="mb-2 font-extrabold">{first}ning yutuqlari</h2>
           <ul className="space-y-2">
             {o.wins.map((w, i) => (
-              <li key={i} className="flex items-center gap-3 rounded-2xl bg-[#F2F4F9] p-3">
+              <li key={i} className="flex items-start gap-3 rounded-2xl bg-[#F2F4F9] p-3">
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-white" style={{ background: RESULT_META[w.type]?.color ?? '#8C9A97' }}>
                   <Medal className="h-4 w-4" />
                 </span>
@@ -141,6 +141,20 @@ export default async function Home() {
                     {w.type}
                     {RESULT_PLACES.find((p) => p.k === w.place) ? `, ${RESULT_PLACES.find((p) => p.k === w.place)!.l}` : ''}, {fmtShort(w.date)}
                   </span>
+                  {(w.link || (w.files?.length ?? 0) > 0) && (
+                    <span className="mt-1.5 flex flex-wrap gap-1.5">
+                      {w.link && (
+                        <a href={w.link} target="_blank" rel="noopener noreferrer nofollow" className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-[#0B78A6]">
+                          Loyihani ko&apos;rish
+                        </a>
+                      )}
+                      {w.files?.map((f) => (
+                        <a key={f.id} href={`/api/yutuq-fayl/${f.id}`} target="_blank" rel="noopener" className="max-w-[160px] truncate rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-[#0C1631]">
+                          {f.mime === 'application/pdf' ? 'Sertifikat (PDF)' : 'Sertifikat'}
+                        </a>
+                      ))}
+                    </span>
+                  )}
                 </span>
               </li>
             ))}

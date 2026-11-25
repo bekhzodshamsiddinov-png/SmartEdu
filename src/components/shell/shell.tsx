@@ -11,6 +11,7 @@ import { Avatar, cn } from '@/components/ui';
 import { logout } from '@/app/actions/auth';
 import { SearchBox } from './search';
 import { BranchSwitcher } from './branch-switcher';
+import { BackButton, useNavStack } from './back';
 import type { NavItem } from './nav';
 
 const ICONS: Record<string, typeof Home> = {
@@ -38,6 +39,7 @@ export function Shell({
   const path = usePathname();
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [path]);
+  useNavStack();
   const active = (href: string) => (href === '/' ? path === '/' : path.startsWith(href));
   const bottom = items.filter((i) => ['/ish-stoli', '/', '/davomat', '/oquvchilar', '/tolovlar', '/lidlar'].includes(i.href)).slice(0, 4);
 
@@ -127,6 +129,7 @@ export function Shell({
           <button onClick={() => setOpen(true)} className="grid h-10 w-10 place-items-center rounded-field text-fg lg:hidden" aria-label="Menyu">
             <Menu className="h-5 w-5" />
           </button>
+          <BackButton />
           <div className="min-w-0 flex-1">
             <SearchBox />
           </div>

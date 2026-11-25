@@ -2,7 +2,7 @@
 import { Ago } from '@/components/ago';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Magnet, Phone, Plus, UserPlus, Trash2, Calendar, PhoneCall, Target, MessageSquareQuote, X, Link2, Copy, Search, BarChart3, Repeat, Clock, Megaphone, AlertTriangle } from 'lucide-react';
+import { Magnet, Phone, Plus, UserPlus, Trash2, Calendar, PhoneCall, Target, MessageSquareQuote, X, Link2, Copy, Search, BarChart3, Repeat, Clock, Megaphone, AlertTriangle, FileSpreadsheet } from 'lucide-react';
 import Link from 'next/link';
 import type { LeadStage } from '@/db/schema';
 import { Badge, Button, Card, Field, PageHeader, cn } from '@/components/ui';
@@ -69,10 +69,12 @@ export function LeadsView({
   touches,
   campaigns,
   canReport,
+  canImport,
 }: {
   touches: Touch[];
   campaigns: string[];
   canReport: boolean;
+  canImport?: boolean;
   plan: PlanRow[];
   month: string;
   isBoss: boolean;
@@ -180,6 +182,11 @@ export function LeadsView({
             {canReport && (
               <Link href="/lidlar/manbalar" className="inline-flex h-10 items-center gap-2 rounded-field border border-line-strong bg-white px-4 text-sm font-bold hover:bg-canvas">
                 <BarChart3 className="h-4 w-4" /> Manbalar hisoboti
+              </Link>
+            )}
+            {canImport && (
+              <Link href="/yuklash" className="inline-flex h-10 items-center gap-2 rounded-field border border-line-strong bg-white px-4 text-sm font-bold hover:bg-canvas">
+                <FileSpreadsheet className="h-4 w-4" /> Excel&apos;dan yuklash
               </Link>
             )}
             <Button variant="secondary" onClick={() => setLinks(true)}>

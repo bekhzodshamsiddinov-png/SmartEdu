@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { SESSION_COOKIE, verifySession } from '@/lib/session';
 
-const PUBLIC = ['/login', '/setup', '/akademiya', '/ota-ona', '/ilova', '/icons', '/sw.js', '/manifest.webmanifest', '/sitemap.xml', '/api/payme', '/api/click', '/api/telegram', '/api/leads/inbound', '/api/meta/webhook'];
+const PUBLIC = ['/login', '/setup', '/akademiya', '/ota-ona', '/ilova', '/icons', '/sw.js', '/manifest.webmanifest', '/sitemap.xml', '/api/payme', '/api/click', '/api/telegram', '/api/leads/inbound', '/api/meta/webhook', '/api/yutuq-fayl'];
 const isPublic = (p: string) => PUBLIC.some((x) => p === x || p.startsWith(x + '/') || p.startsWith(x + '?'));
 
 /** Kontent xavfsizlik siyosati: faqat o'z skriptlarimiz (nonce bilan) ishlaydi — XSS bo'lsa ham begona kod ishga tushmaydi */

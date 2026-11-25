@@ -23,6 +23,7 @@ export const LEAD_SOURCES = [
   'Akademiya sayti',
   'Tavsiya',
   'Bitiruvchi',
+  "Eski o'quvchi",
   'Ofisga keldi',
   "Qo'ng'iroq",
   'Maktab',
@@ -38,6 +39,7 @@ export const SOURCE_COLOR: Record<string, string> = {
   'Akademiya sayti': '#0E7C6B',
   Tavsiya: '#C98A00',
   Bitiruvchi: '#7A4FD6',
+  "Eski o'quvchi": '#B5512B',
   'Ofisga keldi': '#0C1631',
   "Qo'ng'iroq": '#5B6478',
   Maktab: '#2F9E44',
@@ -46,7 +48,7 @@ export const SOURCE_COLOR: Record<string, string> = {
 /** Tavsiya qiluvchi o'quvchini so'raydigan kanallar */
 export const REFERRAL_SOURCES = ['Tavsiya', 'Bitiruvchi'];
 /** Lid qanday tushgani */
-export const TOUCH_VIA: Record<string, string> = { qolda: "Qo'lda kiritildi", meta: 'Instagram/Facebook formasi', uitc: 'uitc.uz formasi', ariza: 'Akademiya ariza formasi' };
+export const TOUCH_VIA: Record<string, string> = { qolda: "Qo'lda kiritildi", meta: 'Instagram/Facebook formasi', uitc: 'uitc.uz formasi', ariza: 'Akademiya ariza formasi', import: "Excel'dan yuklandi" };
 
 export const STUDENT_STATUS: Record<StudentStatus, { label: string; tone: Tone }> = {
   faol: { label: 'Faol', tone: 'good' },
